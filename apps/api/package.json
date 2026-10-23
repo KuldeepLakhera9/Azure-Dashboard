@@ -9,14 +9,15 @@
     "clean": "rimraf dist tsconfig.tsbuildinfo",
     "start": "node dist/index.js",
     "type-check": "tsc --noEmit",
-    "lint": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts"
   },
   "dependencies": {
     "@adt-ai/shared": "*",
-    "@azure/identity": "^4.7.0",
-    "@azure/arm-resourcegraph": "^5.0.0",
     "@azure/arm-compute": "^22.2.0",
     "@azure/arm-monitor": "^8.0.0",
+    "@azure/arm-resourcegraph": "^5.0.0",
+    "@azure/identity": "^4.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
@@ -29,6 +30,9 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^22.13.4",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.1",
     "rimraf": "^6.0.1",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3"
