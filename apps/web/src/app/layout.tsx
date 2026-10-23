@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "../components/theme-provider";
+import { AppShell } from "../components/shell/app-shell";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -47,8 +48,10 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-screen bg-slate-50 dark:bg-[#080c14] text-slate-900 dark:text-slate-100 font-sans antialiased selection:bg-azure-500 selection:text-white">
-        <ThemeProvider>{children}</ThemeProvider>
+      <body className="min-h-screen bg-page text-primary font-sans antialiased selection:bg-accent selection:text-white">
+        <ThemeProvider>
+          <AppShell>{children}</AppShell>
+        </ThemeProvider>
       </body>
     </html>
   );
