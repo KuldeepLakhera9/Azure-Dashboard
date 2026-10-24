@@ -22,6 +22,9 @@ export const ResourceInventoryResponseSchema = z.object({
   lastUpdated: z.string(),
   isStale: z.boolean(),
   freshnessWarning: z.string().optional(),
+  skipToken: z.string().optional(),
+  page: z.number().optional(),
+  pageSize: z.number().optional(),
 });
 
 export type ResourceInventoryResponse = z.infer<typeof ResourceInventoryResponseSchema>;
@@ -187,3 +190,28 @@ export const SystemHealthResponseSchema = z.object({
 });
 
 export type SystemHealthResponse = z.infer<typeof SystemHealthResponseSchema>;
+
+// --- Azure Alerts Management ---
+export const AlertItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  severity: z.enum(["Sev0", "Sev1", "Sev2", "Sev3", "Sev4"]),
+  state: z.enum(["New", "Acknowledged", "Closed"]),
+  targetResource: z.string(),
+  targetResourceType: z.string().optional(),
+  monitorCondition: z.enum(["Fired", "Resolved"]),
+  signalType: z.string().optional(),
+  firedDateTime: z.string(),
+  description: z.string().optional(),
+});
+
+export type AlertItem = z.infer<typeof AlertItemSchema>;
+
+export const AlertsResponseSchema = z.object({
+  alerts: z.array(AlertItemSchema),
+  totalCount: z.number(),
+  lastUpdated: z.string(),
+  isStale: z.boolean(),
+});
+
+export type AlertsResponse = z.infer<typeof AlertsResponseSchema>;

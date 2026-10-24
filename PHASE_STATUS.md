@@ -9,26 +9,25 @@
 - **Phase 3**: Overview Dashboard (Interactive KPI cards, 4 Recharts visualizations, alert feed, inventory preview, dedicated mock data contract)
 - **Phase 4**: Resources & Performance Monitoring (Searchable/filterable/sortable inventory table, pagination, VM details drawer with safe Azure portal link, hypervisor vs guest OS memory telemetry boundary, no-data/error diagnostic modes)
 - **Phase 5**: Cost Analytics and Budgets (ActualCost vs AmortizedCost vs ForecastedCost distinction, service and resource-group breakdowns, CSV export, threshold progress meter, alert rules and audit history, Azure budget governance disclaimer, truthful unconfigured empty budget state)
-**Current Status:** **Phase 5 Completed & Verified**  
-**Next Milestone:** Phase 6 — Authentication, Read-Only Guardrails & Settings (Awaiting User Approval)
+- **Phase 6**: Azure Data Integration (Backend architecture connecting to Azure via official SDKs, DefaultAzureCredential & Managed Identity, Azure Resource Graph continuation-token pagination, Compute instanceView VM power states, Cost Management Query API with durable store & 24h cooldown, Consumption Budgets, Monitor metrics, Alerts management, zero secret exposure)
+**Current Status:** **Phase 6 Completed & Verified**  
+**Next Milestone:** Phase 7 — Authentication, Read-Only Guardrails & Settings (Awaiting User Approval)
 
 ---
 
-## 1. Phase 5 Architecture & Features Implemented
+## 1. Phase 6 Architecture & Features Implemented
 
 | Area | Implementation Details | Status |
 | :--- | :--- | :--- |
-| **Typed Service Contracts** | Defined `ICostService` (`apps/web/src/lib/services/cost-service.ts`) and `IBudgetService` (`apps/web/src/lib/services/budget-service.ts`) with typed models for `CostSummaryData`, `CostRecordItem`, `CostTrendPoint`, `AzureBudgetItem`, `BudgetThresholdItem`, and `BudgetAlertEvent`. Entire UI is decoupled from the underlying data provider. | **Verified Compliant** |
-| **Costs Interface (`/costs`)** | Month-to-date total, USD currency labeling without silent conversions, reporting period (`Oct 1 – Oct 31, 2026`), dual-line Cost Trend chart (Actual vs Forecasted), service-level breakdown, resource-group breakdown. Sortable, filterable cost records table with pagination and direction toggles. | **Verified Compliant** |
-| **Cost Dimensions & Separation of Measures** | Explicit separation of `ActualCost`, `AmortizedCost`, `ForecastedCost`, and `ConfiguredBudget`. Clear explanations of why ActualCost (raw invoiced charges) and AmortizedCost (distributed upfront reservations) must not be conflated. | **Verified Compliant** |
-| **CSV Export Utility** | Generic browser CSV export utility (`apps/web/src/lib/utils/csv-export.ts`) with formula injection sanitization, proper character escaping, and timestamped filenames. Direct export of currently filtered and sorted cost records. | **Verified Compliant** |
-| **Billing Freshness & Latency Notice** | Prominent billing data timestamp with 24–48h pipeline lag advisory explaining that Azure cost records are posted asynchronously and actual totals can adjust before invoice finalization. Stale data and query error simulation toggles included. | **Verified Compliant** |
-| **Budgets Interface (`/budgets`)** | Configured budget amount ($6,500.00 USD), monthly budget period, current consumption ($4,820.65 USD / 74.2%), remaining budget ($1,679.35 USD), and forecasted month-end spend ($6,150.00 USD / 94.6%). | **Verified Compliant** |
-| **Threshold Progress Visualization** | Multi-layer visual progress bar showing actual spend, forecasted spend, and threshold indicator markers at 80%, 90%, and 100%. Color-coded indicator highlighting triggered 90% forecasted rule. | **Verified Compliant** |
-| **Alert Rules & Notification Channels** | Detailed alert threshold cards showing spend limit amounts, trigger status, contact emails (`ops@adt-ai.org`, `finance@adt-ai.org`, `lead-architect@adt-ai.org`), and assigned Azure Action Groups (`ag-adt-ops-alerts`, `ag-adt-lead-escalation`). Status panel for Email, Action Groups, and Webhooks. | **Verified Compliant** |
-| **Alert History Audit Trail** | Chronological audit log table tracking past threshold breaches, timestamps (UTC), spend at trigger, resolution status (`Acknowledged`, `Resolved`), and dispatched recipient lists. | **Verified Compliant** |
-| **Azure Budget Governance Disclaimer** | Prominently emphasizes that an Azure budget is an **alerting and notification mechanism**, not a guaranteed spending ceiling. Budgets do not automatically shut down resources without custom runbooks. | **Verified Compliant** |
-| **Truthful Unconfigured Budget State** | Interactive simulation toggle to demonstrate the truthful empty budget state. When no budget is configured, the system explicitly informs the user that Azure does not invent default budgets, explains the financial implications, and provides guidance for creating one in Azure Portal. | **Verified Compliant** |
+| **Backend-Only Azure Architecture** | Browser communicates exclusively with Express API (`apps/api`). All Azure SDK invocations (`@azure/identity`, `@azure/arm-resourcegraph`, `@azure/arm-compute`, `@azure/arm-monitor`, Cost Management REST API) occur strictly on the backend. Zero Azure secrets or tokens are ever exposed to the client. | **Verified Compliant** |
+| **Authentication & Credential Resolution** | Uses `DefaultAzureCredential` supporting Azure App Service Managed Identity in production, and developer tooling (Azure CLI, Service Principal environment variables) in local workflows. Automatic fallback to mock provider when unconfigured. | **Verified Compliant** |
+| **Azure Resource Inventory API** | `GET /api/resources` queries Azure Resource Graph at subscription scope with continuation-token (`skipToken`) and page-based pagination. `GET /api/resources/detail?id=...` and `GET /api/resources/:id` safely fetch single resource definitions without path conflicts. | **Verified Compliant** |
+| **Compute VM Power State** | VM power states (`running`, `deallocated`, `stopped`) are retrieved from live Compute `instanceView` APIs. Implements bounded concurrency batching (chunks of 5) to eliminate unbounded parallel requests and prevent 429 throttling. | **Verified Compliant** |
+| **Cost Management & Shared Cooldown** | `GET /api/costs` queries Azure Cost Management Query API at subscription scope for Month-to-Date `ActualCost` and service-level breakdowns. Implements `FileDurableBillingStore` (`apps/api/src/cache/durable-store.ts`) enforcing a shared 24-hour cooldown across backend instances and process restarts. Browser refreshes cannot bypass the 24h cache. Preserves previous successful results with `isStale: true` upon upstream failure. | **Verified Compliant** |
+| **Consumption Budgets Integration** | `GET /api/budgets` integrates with Azure Consumption Budgets REST API. Maps configured limits, current consumption, alert thresholds, and notification contacts. Truthfully reports empty state when no budget is configured. | **Verified Compliant** |
+| **Infrastructure Performance Metrics** | `GET /api/metrics` queries Azure Monitor for host-level metrics (`Percentage CPU`, `Disk Read/Write Bytes`, `Network In Total`). Accurately reports missing telemetry without inventing 0% guest metrics. | **Verified Compliant** |
+| **Alerts Management Integration** | `GET /api/alerts` queries Azure Alerts Management for active and resolved subscription alerts (`Sev0` through `Sev4`, monitor conditions, and target resources). | **Verified Compliant** |
+| **Centralized Frontend API Client** | Built `fetchFromApi` (`apps/web/src/lib/services/api-client.ts`) and configured Next.js rewrites in `apps/web/next.config.js` to route `/api/*` directly to the Express backend without CORS issues. | **Verified Compliant** |
 
 ---
 
@@ -36,15 +35,15 @@
 
 | Acceptance Criterion | Result | Evidence |
 | :--- | :--- | :--- |
-| **Cost charts and tables work with mock data** | **PASS** | Trend chart and service/resource-group breakdowns render correctly with Recharts and mock data providers. |
-| **Currency and number formatting are consistent** | **PASS** | Standardized USD currency labels and 2-decimal fraction formatting across all KPI cards, tables, and tooltips. No silent conversions. |
-| **Budget progress is based on configured values** | **PASS** | Progress bar, percentages, and remaining headroom compute directly from configured budget ceiling ($6,500.00) and current consumption ($4,820.65). |
-| **Empty budget states are useful and truthful** | **PASS** | Truthful empty state correctly reports unconfigured status without inventing numbers, providing actionable guidance for Azure Portal budget setup. |
-| **CSV export works** | **PASS** | `exportToCsv` downloads formatted, sanitized CSV containing the filtered cost table records. |
-| **Stale and error states are visually clear** | **PASS** | Interactive state toggles on Costs page verify healthy, stale data warning, and query failure error display states. |
-| **No mock data mistaken for real subscription data** | **PASS** | Prominent visual mock data notice banners on both Costs and Budgets pages clearly identify data as simulated. |
-| **Strict No-Docker Requirement** | **PASS** | Zero Dockerfiles, docker-compose files, or container tools used. |
-| **All checks pass** | **PASS** | `npm run lint`, `npm run typecheck`, and `npm run build` exit with code 0. |
+| **Real resource data loads with appropriate authorization** | **PASS** | Azure Resource Graph queries subscription scope using DefaultAzureCredential with graceful fallback when unconfigured. |
+| **VM state is retrieved from appropriate source** | **PASS** | InstanceView statuses (`PowerState/running`, `deallocated`, `stopped`) parsed with bounded concurrency. |
+| **Cost data matches Azure Cost Analysis principles** | **PASS** | MTD ActualCost and ServiceName dimensions queried at subscription scope. |
+| **Billing cooldown survives restarts & multiple instances** | **PASS** | `FileDurableBillingStore` persists to disk (`.cache/azure-billing-store.json`) with next allowed query timestamp, rejecting premature queries. |
+| **Pagination and API failures handled** | **PASS** | Resource Graph continuation token (`skipToken`) supported; upstream errors return cached snapshots with `isStale: true`. |
+| **No secrets sent to browser** | **PASS** | Error handler redacts tokens; no bearer tokens or connection strings leave Express backend. |
+| **UI identifies stale and delayed information** | **PASS** | `isStale`, `lastUpdated`, and billing latency notices returned across all endpoints. |
+| **Strict No-Docker Requirement** | **PASS** | Monorepo runs via native Node/npm scripts without containers. |
+| **All checks pass** | **PASS** | `npm run lint`, `npm run typecheck`, and `npm run build` exit with code 0 across all workspaces. |
 
 ---
 
@@ -75,6 +74,6 @@ npm run build
 
 ---
 
-## 4. Next Phase: Phase 6 Proposal (Awaiting User Approval)
+## 4. Next Phase: Phase 7 Proposal (Awaiting User Approval)
 
-Phase 5 is complete. Ready to proceed to **Phase 6 (Authentication, Read-Only Guardrails & Settings)** upon user approval.
+Phase 6 is complete. Ready to proceed to **Phase 7 (Authentication, Authorization & Role-Based Access Control)** upon user approval.

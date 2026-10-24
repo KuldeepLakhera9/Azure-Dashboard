@@ -5,8 +5,9 @@ import {
   BudgetsResponse,
   MetricsResponse,
   SystemHealthResponse,
+  AlertsResponse,
 } from "@adt-ai/shared";
-import { IAzureDataProvider } from "./types";
+import { IAzureDataProvider, ResourceFilterOptions } from "./types";
 import { globalCache } from "../../cache";
 import { config } from "../../config";
 
@@ -49,17 +50,16 @@ export class MockAzureDataProvider implements IAzureDataProvider {
     };
   }
 
-  public async getResourceInventory(): Promise<ResourceInventoryResponse> {
+  public async getResourceInventory(options?: ResourceFilterOptions): Promise<ResourceInventoryResponse> {
     const cacheKey = "mock:inventory:resources";
     const cached = globalCache.get<ResourceInventoryResponse>(cacheKey);
 
+    let baseResources: ResourceInventoryResponse["resources"] = [];
     if (cached && !cached.isStale) {
-      return cached.data;
-    }
-
-    const now = new Date().toISOString();
-    const data: ResourceInventoryResponse = {
-      resources: [
+      baseResources = cached.data.resources;
+    } else {
+      const now = new Date().toISOString();
+      baseResources = [
         {
           id: "/subscriptions/sub-adt-ai-foundation-prod-01/resourceGroups/rg-adt-training-compute/providers/Microsoft.Compute/virtualMachines/vm-adt-gpu-trainer-01",
           name: "vm-adt-gpu-trainer-01",
@@ -125,14 +125,77 @@ export class MockAzureDataProvider implements IAzureDataProvider {
           tags: { Scope: "Foundation-VNet" },
           provisioningState: "Succeeded",
         },
-      ],
-      totalCount: 6,
-      lastUpdated: now,
-      isStale: false,
-    };
+      ];
 
-    globalCache.set(cacheKey, data, config.OPERATIONAL_CACHE_TTL_MS);
-    return data;
+      const fullData: ResourceInventoryResponse = {
+        resources: baseResources,
+        totalCount: baseResources.length,
+        lastUpdated: now,
+        isStale: false,
+      };
+      globalCache.set(cacheKey, fullData, config.OPERATIONAL_CACHE_TTL_MS);
+    }
+
+    let filtered = [...baseResources];
+    if (options?.search) {
+      const q = options.search.toLowerCase();
+      filtered = filtered.filter(
+        (r) => r.name.toLowerCase().includes(q) || r.type.toLowerCase().includes(q)
+      );
+    }
+    if (options?.type && options.type !== "all") {
+      filtered = filtered.filter((r) => r.type === options.type);
+    }
+    if (options?.resourceGroup && options.resourceGroup !== "all") {
+      filtered = filtered.filter((r) => r.resourceGroup === options.resourceGroup);
+    }
+    if (options?.location && options.location !== "all") {
+      filtered = filtered.filter((r) => r.location === options.location);
+    }
+
+    const totalCount = filtered.length;
+    const page = options?.page || 1;
+    const pageSize = options?.pageSize || 25;
+    const startIndex = (page - 1) * pageSize;
+    const paginated = filtered.slice(startIndex, startIndex + pageSize);
+
+    return {
+      resources: paginated,
+      totalCount,
+      lastUpdated: new Date().toISOString(),
+      isStale: false,
+      page,
+      pageSize,
+    };
+  }
+
+  public async getResourceDetail(resourceId: string): Promise<Record<string, unknown> | null> {
+    const inv = await this.getResourceInventory();
+    const resource = inv.resources.find((r) => r.id === resourceId);
+    if (!resource) return null;
+
+    const isVm = resource.type === "Microsoft.Compute/virtualMachines";
+    return {
+      ...resource,
+      extendedProperties: {
+        instanceView: isVm
+          ? {
+              statuses: [
+                { code: "ProvisioningState/succeeded", displayStatus: "Provisioning succeeded", level: "Info" },
+                { code: "PowerState/running", displayStatus: "VM running", level: "Info" },
+              ],
+              vmAgent: {
+                vmAgentVersion: "2.10.0",
+                statuses: [{ code: "ProvisioningState/succeeded", displayStatus: "Ready" }],
+              },
+            }
+          : undefined,
+        monitoring: {
+          azureMonitorAgentInstalled: isVm && resource.name.includes("gpu"),
+          diagnosticsEnabled: true,
+        },
+      },
+    };
   }
 
   public async getVmInventory(): Promise<VmInventoryResponse> {
@@ -362,6 +425,56 @@ export class MockAzureDataProvider implements IAzureDataProvider {
           dataPoints: generatePoints(12000000, 3000000),
         },
       ],
+    };
+  }
+
+  public async getAlerts(): Promise<AlertsResponse> {
+    const now = new Date().toISOString();
+    return {
+      alerts: [
+        {
+          id: "/subscriptions/sub-adt-ai-foundation-prod-01/providers/Microsoft.AlertsManagement/alerts/alt-001",
+          name: "High CPU Utilization Rule - GPU Cluster",
+          severity: "Sev2",
+          state: "New",
+          targetResource:
+            "/subscriptions/sub-adt-ai-foundation-prod-01/resourceGroups/rg-adt-training-compute/providers/Microsoft.Compute/virtualMachines/vm-adt-gpu-trainer-01",
+          targetResourceType: "Microsoft.Compute/virtualMachines",
+          monitorCondition: "Fired",
+          signalType: "Metric",
+          firedDateTime: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+          description: "Average Percentage CPU exceeded threshold (>85%) over last 15 minutes.",
+        },
+        {
+          id: "/subscriptions/sub-adt-ai-foundation-prod-01/providers/Microsoft.AlertsManagement/alerts/alt-002",
+          name: "Forecasted Budget Threshold 90% Breached",
+          severity: "Sev1",
+          state: "Acknowledged",
+          targetResource:
+            "/subscriptions/sub-adt-ai-foundation-prod-01/providers/Microsoft.Consumption/budgets/budget-adt-monthly-operations",
+          targetResourceType: "Microsoft.Consumption/budgets",
+          monitorCondition: "Fired",
+          signalType: "Budget",
+          firedDateTime: new Date(Date.now() - 14 * 3600 * 1000).toISOString(),
+          description: "Projected month-end cost ($6,150.00 USD) exceeded 90% threshold rule.",
+        },
+        {
+          id: "/subscriptions/sub-adt-ai-foundation-prod-01/providers/Microsoft.AlertsManagement/alerts/alt-003",
+          name: "Storage Ingress Anomalous Spike",
+          severity: "Sev3",
+          state: "Closed",
+          targetResource:
+            "/subscriptions/sub-adt-ai-foundation-prod-01/resourceGroups/rg-adt-foundation-data/providers/Microsoft.Storage/storageAccounts/sttraindatasharedprod",
+          targetResourceType: "Microsoft.Storage/storageAccounts",
+          monitorCondition: "Resolved",
+          signalType: "Metric",
+          firedDateTime: new Date(Date.now() - 72 * 3600 * 1000).toISOString(),
+          description: "Storage ingress exceeded 500 MB/s baseline during dataset ingest.",
+        },
+      ],
+      totalCount: 3,
+      lastUpdated: now,
+      isStale: false,
     };
   }
 }

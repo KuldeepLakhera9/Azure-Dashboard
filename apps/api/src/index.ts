@@ -4,10 +4,12 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { config } from "./config";
 import { healthRouter } from "./routes/health";
+import { resourcesRouter } from "./routes/resources";
 import { inventoryRouter } from "./routes/inventory";
 import { costsRouter } from "./routes/costs";
 import { budgetsRouter } from "./routes/budgets";
 import { metricsRouter } from "./routes/metrics";
+import { alertsRouter } from "./routes/alerts";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -48,10 +50,12 @@ app.use((req, res, next) => {
 
 // Routes
 app.use("/api/health", healthRouter);
-app.use("/api/inventory", inventoryRouter);
+app.use("/api/resources", resourcesRouter);
+app.use("/api/inventory", inventoryRouter); // Backwards-compatible alias
 app.use("/api/costs", costsRouter);
 app.use("/api/budgets", budgetsRouter);
 app.use("/api/metrics", metricsRouter);
+app.use("/api/alerts", alertsRouter);
 
 // Root fallback
 app.get("/", (_req, res) => {
