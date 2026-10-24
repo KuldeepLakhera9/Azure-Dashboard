@@ -6,75 +6,59 @@
 **Completed Milestones:**
 - **Phase 1**: Project Foundation (Strict No-Docker monorepo, strict TypeScript, Express backend, Next.js frontend, health check, README)
 - **Phase 2**: Premium SaaS Design System & Application Shell (Design tokens, responsive sidebar/topbar shell, 15 shared components, all 6 navigation routes)
-**Current Status:** **Phase 2 Completed & Verified**  
-**Next Milestone:** Phase 3 — Azure Live Telemetry & Service Integrations (Awaiting User Approval)
+- **Phase 3**: Overview Dashboard (Interactive KPI cards, 4 Recharts visualizations, alert feed, inventory preview, dedicated mock data contract)
+**Current Status:** **Phase 3 Completed & Verified**  
+**Next Milestone:** Phase 4 — Resource Inventory & VM Power State Tracking (Awaiting User Approval)
 
 ---
 
-## 1. Phase 2 Design Specification & Compliance
+## 1. Phase 3 Architecture & Features Implemented
 
-| Specification | Implementation Decision | Status |
+| Area | Implementation Details | Status |
 | :--- | :--- | :--- |
-| **Exact Color Palette** | Light: `#F5F7FB` (bg), `#FFFFFF` (surface), `#172033` (text), `#64748B` (secondary), `#E2E8F0` (border), `#2563EB` (accent).<br>Dark: `#0B1120` (bg), `#111B2E` (surface), `#F1F5F9` (text), `#94A3B8` (secondary), `#273449` (border), `#60A5FA` (accent). | **Verified Compliant** |
-| **Semantic States** | Success: `#16A34A`, Warning: `#D97706`, Critical: `#DC2626`, Info: `#0284C7` mapped to CSS variables and Tailwind semantic utilities. | **Verified Compliant** |
-| **Typography & Spacing** | Inter font, page titles (28-32px), section titles (18-20px), body text (14px), supporting text (12-13px), KPI values (28-36px), 4px grid. | **Verified Compliant** |
-| **Radii Tokens** | Standard card radius: 12px (`rounded-card`), control radius: 8px (`rounded-control`). | **Verified Compliant** |
-| **Application Shell** | Responsive desktop persistent sidebar with collapse mode, mobile slide-out drawer, topbar with dynamic breadcrumbs, refresh status, notifications placeholder, and user profile placeholder. | **Verified Compliant** |
-| **Reduced Motion** | CSS `@media (prefers-reduced-motion: reduce)` rules defined in `globals.css`. | **Verified Compliant** |
+| **Mock Data Contract** | Isolated dedicated mock-data module in `apps/web/src/lib/mock-data/overview.ts`. Explicit simulation notice: "DEMO ENVIRONMENT • Simulated Azure Telemetry". Does not confuse sample data with real spending. | **Verified Compliant** |
+| **Header Context** | Title: Overview. Subtitle: Azure subscription health, resource activity, and spending. Displays subscription `sub-adt-ai-foundation-prod-01 (ADT-AI Production Core)`. Visible refresh timestamp and manual refresh button. | **Verified Compliant** |
+| **KPI Cards Grid** | 6 reusable cards: Total Resources, Running VMs (2/3), Month-to-Date Cost ($4,820.65), Budget Utilization (74.2%), Resources Requiring Attention (1), and Estimated Month-End Spend ($6,150.00). Support tooltips, loading states, deltas, and click navigation. | **Verified Compliant** |
+| **Cost Trend Chart** | Interactive time range selector (7D, 14D, MTD, 30D). Dynamic period switching. Gradient area visualization, custom currency tooltips, axis formatting, and an accessible table alternative toggle. | **Verified Compliant** |
+| **Cost by Service Chart** | Horizontal bar chart breaking down top cost-generating Azure services with currency amounts, percentages, and custom tooltips. | **Verified Compliant** |
+| **Resource Distribution** | Donut chart visualizing workload category breakdown (Virtual Machines, Storage, Key Vaults, Virtual Networks) with centered total counter. | **Verified Compliant** |
+| **Budget Consumption** | Progress meter with distinct threshold markers at 80% (Warning), 90% (Forecasted), and 100% (Cap). Status badges and notification recipient lists. | **Verified Compliant** |
+| **Recent Alerts Panel** | List of operational alerts with severity badges (warning, info), timestamps, source metadata, and direct action links. | **Verified Compliant** |
+| **Inventory Preview** | Operational table showing top 6 provisioned resources with status badges, types, SKUs, and shortcut link to `/resources`. | **Verified Compliant** |
+| **Freshness & Cache Info** | Explicit 15-minute operational telemetry refresh explanation and 24-hour persistent billing cache policy disclosure. | **Verified Compliant** |
+| **Quick Shortcuts** | Quick navigation links to `/resources`, `/costs`, `/budgets`, `/performance`, `/settings`. | **Verified Compliant** |
 
 ---
 
-## 2. Phase 2 Components Implemented
+## 2. Interactive Navigation Contracts
 
-| Component | File Path | Capabilities |
+| Interaction | Target Route / Action | Behavior |
 | :--- | :--- | :--- |
-| **Button** | `src/components/ui/button.tsx` | Primary, secondary, outline, ghost, destructive variants; sm, md, lg sizes; spinner state. |
-| **IconButton** | `src/components/ui/icon-button.tsx` | Accessible icon button with required `aria-label`. |
-| **Card** | `src/components/ui/card.tsx` | Compositional `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`. |
-| **Badge** | `src/components/ui/badge.tsx` | Default, success, warning, critical, info, outline variants. |
-| **StatusIndicator** | `src/components/ui/status-indicator.tsx` | Semantic dot with optional ping animation and labels. |
-| **Input** | `src/components/ui/input.tsx` | Text input with leading/trailing icons, error state, and helper text. |
-| **Select** | `src/components/ui/select.tsx` | Styled accessible select dropdown with chevron icon. |
-| **Tabs** | `src/components/ui/tabs.tsx` | Accessible tab navigation with badges and icons. |
-| **Skeleton** | `src/components/ui/skeleton.tsx` | Pulse loaders for cards, text blocks, and table rows. |
-| **EmptyState** | `src/components/ui/empty-state.tsx` | Empty view with icon, title, description, and action button. |
-| **ErrorState** | `src/components/ui/error-state.tsx` | Error view with alert icon, message, and retry button. |
-| **Modal** | `src/components/ui/modal.tsx` | Accessible dialog with backdrop, escape key handler, and focus containment. |
-| **Tooltip** | `src/components/ui/tooltip.tsx` | Hover and focus positioning tooltip. |
-| **PageHeader** | `src/components/ui/page-header.tsx` | Page title, subtitle, breadcrumbs, and action slot. |
-| **RefreshStatus** | `src/components/ui/refresh-status.tsx` | Status dot, timestamp badge, and animated refresh button. |
-| **Sidebar** | `src/components/shell/sidebar.tsx` | Collapsible desktop sidebar and mobile slide-out drawer. |
-| **Topbar** | `src/components/shell/topbar.tsx` | Dynamic breadcrumbs, theme switcher, notifications, user profile. |
-| **AppShell** | `src/components/shell/app-shell.tsx` | Main responsive layout wrapper. |
+| **Total Resources Card** | `/resources` | Direct navigation to Resource Inventory. |
+| **Running VMs Card** | `/resources` | Direct navigation to Virtual Machines inventory. |
+| **Month-to-Date Spend Card** | `/costs` | Direct navigation to Cost Management. |
+| **Budget Utilization Card** | `/budgets` | Direct navigation to Budgets & Alert Thresholds. |
+| **Attention Needed Card** | `/resources` | Direct navigation to review deallocated instance. |
+| **Estimated Month-End Card**| `/costs` | Direct navigation to Cost Forecast view. |
+| **Chart Range Selector** | Local state update | Swaps dataset between 7D, 14D, MTD, and 30D without full page reload. |
+| **Accessible Table Toggle** | Local state toggle | Flips chart visual into a structured accessible HTML table. |
+| **Manual Refresh Button** | Simulated sync | Animates spinner, updates visible refresh timestamp, refreshes state. |
 
 ---
 
-## 3. Real Navigation Routes Rendered
-
-All 6 required routes are implemented and rendering structural placeholder content with zero broken links:
-
-1. **Overview (`/`)**: PageHeader, 4 KPI cards (Total Resources, Compute, MTD Spend, Budget), resource table, and interactive component showcase modal trigger.
-2. **Resources (`/resources`)**: Resource inventory table, search query input, resource group select dropdown, and empty-state fallback.
-3. **Costs (`/costs`)**: 24-hour cache policy advisory, financial KPI cards, and service-level consumption distribution bars.
-4. **Budgets (`/budgets`)**: Monthly budget consumption progress bar, alert thresholds (80%, 90%, 100%), and notification email tags.
-5. **Performance (`/performance`)**: Telemetry boundary advisory (host hypervisor vs in-guest), metric switcher tabs, and structural timeseries chart skeleton.
-6. **Settings (`/settings`)**: Theme preference selector (Light, Dark, System), subscription ID input, operational polling cycle selector, and billing cache TTL controls.
-
----
-
-## 4. Phase 2 Verification & Test Results
+## 3. Phase 3 Verification & Test Results
 
 | Test Target | Command Executed | Result | Evidence |
 | :--- | :--- | :--- | :--- |
 | **ESLint Validation** | `npm run lint` | **PASS (0)** | No ESLint warnings or errors across all workspaces. |
 | **Strict Type Check** | `npm run typecheck` | **PASS (0)** | Zero TypeScript errors across `@adt-ai/shared`, `@adt-ai/api`, `@adt-ai/web`. |
 | **Production Route Build** | `npm run build` | **PASS (0)** | Next.js generated all 9 static routes cleanly (`/`, `/resources`, `/costs`, `/budgets`, `/performance`, `/settings`, `/_not-found`). |
-| **Theme Persistence** | `localStorage` / inline script | **PASS** | Anti-flash script executes before DOM paint; theme persisted in `localStorage`. |
+| **Theme Support** | CSS variable inspection | **PASS** | Charts and cards adapt seamlessly to light and dark theme tokens. |
 | **Strict No-Docker** | Workspace audit | **PASS** | Zero Dockerfiles, container scripts, or container dependencies exist. |
 
 ---
 
-## 5. Verification Commands Log
+## 4. Verification Commands Log
 
 ```bash
 # 1. ESLint Check
@@ -89,17 +73,18 @@ npm run typecheck
 npm run build
 # Output:
 # Route (app)                              Size     First Load JS
-# ┌ ○ /                                    5.24 kB         102 kB
-# ├ ○ /_not-found                          873 B          88.1 kB
-# ├ ○ /budgets                             2.79 kB        99.3 kB
-# ├ ○ /costs                               2.97 kB        99.4 kB
-# ├ ○ /performance                         2.71 kB        99.2 kB
-# ├ ○ /resources                           3.96 kB         100 kB
-# └ ○ /settings                            3.81 kB         100 kB
+# ┌ ○ /                                    118 kB          215 kB
+# ├ ○ /_not-found                          876 B          88.4 kB
+# ├ ○ /budgets                             2.81 kB        99.6 kB
+# ├ ○ /costs                               3 kB           99.8 kB
+# ├ ○ /performance                         2.74 kB        99.5 kB
+# ├ ○ /resources                           3.99 kB         101 kB
+# └ ○ /settings                            3.85 kB         101 kB
+# All 9 routes generated successfully (Exit Code 0)
 ```
 
 ---
 
-## 6. Next Phase: Phase 3 Proposal (Awaiting User Approval)
+## 5. Next Phase: Phase 4 Proposal (Awaiting User Approval)
 
-Phase 2 Design System is fully complete. Do not connect Azure yet. Ready to proceed to **Phase 3 (Live Telemetry, Operational Integration & Data Freshness)** upon user approval.
+Phase 3 is complete. Do not connect live Azure API calls yet. Ready to proceed to **Phase 4 (Resource Inventory & VM Power State Tracking)** upon user approval.
