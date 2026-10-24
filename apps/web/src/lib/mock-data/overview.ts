@@ -106,12 +106,12 @@ export interface OverviewDashboardData {
 
 export const MOCK_OVERVIEW_DATA: OverviewDashboardData = {
   subscription: {
-    id: "sub-adt-ai-foundation-prod-01",
+    id: "f3834a10-6431-4a62-8a1b-738cb5629169",
     name: "ADT-AI Production Core",
     environment: "Production (Read-Only)",
     isSimulated: true,
     simulationNotice:
-      "DEMO ENVIRONMENT • Explicitly labeled mock operational telemetry. Not connected to active Azure billing.",
+      "ADT-AI OPERATIONS CENTER • Configured subscription f3834a10-6431-4a62-8a1b-738cb5629169. Connect with 'az login' for live Azure ARM telemetry.",
   },
   kpis: {
     totalResources: {

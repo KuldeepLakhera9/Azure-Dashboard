@@ -100,4 +100,19 @@ describe("Operational API Routes Integration", () => {
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(res.body.alerts));
   });
+
+  it("GET /api/azure/status validates target subscription configuration and permissions", async () => {
+    const res = await makeAuthRequest("/api/azure/status");
+    assert.equal(res.status, 200);
+    assert.equal(res.body.subscriptionId, "f3834a10-6431-4a62-8a1b-738cb5629169");
+    assert.equal(res.body.isConfiguredSubscription, true);
+    assert.ok(Array.isArray(res.body.permissions));
+    assert.ok(Array.isArray(res.body.actionableGuidance));
+  });
+
+  it("GET /api/azure/resources operates as supported alias to inventory endpoint", async () => {
+    const res = await makeAuthRequest("/api/azure/resources?page=1&pageSize=3");
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(res.body.resources));
+  });
 });

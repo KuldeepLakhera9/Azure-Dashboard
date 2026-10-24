@@ -12,6 +12,7 @@ import {
   VmPowerState,
   AlertsResponse,
   AlertItem,
+  AzureStatusResponse,
 } from "@adt-ai/shared";
 import { IAzureDataProvider, ResourceFilterOptions } from "./types";
 import { globalCache } from "../../cache";
@@ -26,7 +27,7 @@ export class AzureSdkDataProvider implements IAzureDataProvider {
   private monitorClient: MonitorClient;
 
   constructor() {
-    this.subscriptionId = config.AZURE_SUBSCRIPTION_ID || "";
+    this.subscriptionId = config.AZURE_SUBSCRIPTION_ID || "f3834a10-6431-4a62-8a1b-738cb5629169";
     this.credential = new DefaultAzureCredential();
     this.resourceGraphClient = new ResourceGraphClient(this.credential);
     this.computeClient = new ComputeManagementClient(this.credential, this.subscriptionId);
@@ -39,6 +40,112 @@ export class AzureSdkDataProvider implements IAzureDataProvider {
   private async getArmToken(): Promise<string> {
     const tokenResponse = await this.credential.getToken("https://management.azure.com/.default");
     return tokenResponse.token;
+  }
+
+  public async getAzureStatus(): Promise<AzureStatusResponse> {
+    const now = new Date().toISOString();
+    const isConfigured = this.subscriptionId === "f3834a10-6431-4a62-8a1b-738cb5629169";
+    let authAvailable = false;
+    let subscriptionAccessible = false;
+    const permissions: AzureStatusResponse["permissions"] = [];
+    const guidance: string[] = [];
+
+    // 1. Verify credential acquisition
+    try {
+      await this.getArmToken();
+      authAvailable = true;
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Failed to acquire Azure credential token";
+      permissions.push({
+        role: "Authentication (DefaultAzureCredential)",
+        scope: `/subscriptions/${this.subscriptionId}`,
+        status: "missing",
+        details: errMsg,
+      });
+      guidance.push("1. Interactive login required: run 'az login' in your local terminal.");
+      guidance.push(`2. Set subscription context: run 'az account set --subscription "${this.subscriptionId}"'`);
+    }
+
+    // 2. Verify Reader permission via Resource Graph query
+    if (authAvailable) {
+      try {
+        await this.resourceGraphClient.resources({
+          subscriptions: [this.subscriptionId],
+          query: "Resources | take 1",
+        });
+        subscriptionAccessible = true;
+        permissions.push({
+          role: "Reader",
+          scope: `/subscriptions/${this.subscriptionId}`,
+          status: "verified",
+          details: "Verified via Azure Resource Graph API",
+        });
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : "Resource Graph query failed";
+        permissions.push({
+          role: "Reader",
+          scope: `/subscriptions/${this.subscriptionId}`,
+          status: "missing",
+          details: errMsg,
+        });
+        guidance.push(`Ensure your Azure account or Managed Identity has 'Reader' role on /subscriptions/${this.subscriptionId}`);
+      }
+
+      // 3. Verify Cost Management Reader permission
+      try {
+        const token = await this.getArmToken();
+        const testRes = await fetch(
+          `https://management.azure.com/subscriptions/${this.subscriptionId}/providers/Microsoft.CostManagement/query?api-version=2023-11-01`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              type: "ActualCost",
+              timeframe: "MonthToDate",
+              dataset: { granularity: "None", aggregation: { totalCost: { name: "Cost", function: "Sum" } } },
+            }),
+          }
+        );
+
+        if (testRes.ok) {
+          permissions.push({
+            role: "Cost Management Reader",
+            scope: `/subscriptions/${this.subscriptionId}`,
+            status: "verified",
+            details: "Verified via Cost Management Query API",
+          });
+        } else {
+          permissions.push({
+            role: "Cost Management Reader",
+            scope: `/subscriptions/${this.subscriptionId}`,
+            status: "missing",
+            details: `HTTP ${testRes.status}: ${await testRes.text()}`,
+          });
+          guidance.push(`Ensure your Azure identity has 'Cost Management Reader' role on /subscriptions/${this.subscriptionId}`);
+        }
+      } catch (err: unknown) {
+        permissions.push({
+          role: "Cost Management Reader",
+          scope: `/subscriptions/${this.subscriptionId}`,
+          status: "unverified",
+          details: err instanceof Error ? err.message : "Could not verify cost permissions",
+        });
+      }
+    }
+
+    return {
+      subscriptionId: this.subscriptionId,
+      isConfiguredSubscription: isConfigured,
+      authAvailable,
+      subscriptionAccessible,
+      permissions,
+      mode: "live-azure",
+      actionableGuidance: guidance.length > 0 ? guidance : ["Azure connectivity and permissions fully verified."],
+      timestamp: now,
+    };
   }
 
   public async getSystemHealth(): Promise<SystemHealthResponse> {

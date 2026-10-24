@@ -1,4 +1,6 @@
-import { AzureResourceItem, MOCK_RESOURCES } from "../mock-data/inventory";
+import { AzureResourceItem, MOCK_RESOURCES, ProvisioningState, VmPowerState } from "../mock-data/inventory";
+import { fetchFromApi } from "./api-client";
+import { ResourceInventoryResponse } from "@adt-ai/shared";
 
 export interface ResourceFilterParams {
   search?: string;
@@ -47,7 +49,6 @@ export class MockInventoryService implements IInventoryService {
     params: ResourceQueryParams,
     signal?: AbortSignal
   ): Promise<ResourceQueryResult> {
-    // Check abort signal
     if (signal?.aborted) {
       throw new DOMException("Query aborted", "AbortError");
     }
@@ -62,65 +63,56 @@ export class MockInventoryService implements IInventoryService {
 
     let items = [...MOCK_RESOURCES];
 
-    // 1. Search by name or resource ID
     if (filters.search && filters.search.trim()) {
       const q = filters.search.toLowerCase().trim();
       items = items.filter(
         (r) =>
           r.name.toLowerCase().includes(q) ||
-          r.id.toLowerCase().includes(q) ||
-          r.type.toLowerCase().includes(q)
+          r.type.toLowerCase().includes(q) ||
+          r.resourceGroup.toLowerCase().includes(q)
       );
     }
 
-    // 2. Filter by Resource Type
     if (filters.resourceType && filters.resourceType !== "all") {
       items = items.filter((r) => r.type === filters.resourceType);
     }
 
-    // 3. Filter by Region
     if (filters.region && filters.region !== "all") {
-      items = items.filter((r) => r.location === filters.region || r.locationDisplay === filters.region);
+      items = items.filter((r) => r.locationDisplay === filters.region || r.location === filters.region);
     }
 
-    // 4. Filter by Resource Group
     if (filters.resourceGroup && filters.resourceGroup !== "all") {
       items = items.filter((r) => r.resourceGroup === filters.resourceGroup);
     }
 
-    // 5. Filter by Status (distinguishing VM power state from resource provisioning state!)
     if (filters.status && filters.status !== "all") {
-      const s = filters.status.toLowerCase();
       items = items.filter((r) => {
-        if (s === "running" || s === "deallocated" || s === "stopped") {
-          return r.powerState?.toLowerCase() === s;
-        }
-        return r.provisioningState.toLowerCase() === s;
+        if (filters.status === "Running (VM)") return r.powerState === "running";
+        if (filters.status === "Deallocated (VM)") return r.powerState === "deallocated";
+        if (filters.status === "Stopped (VM)") return r.powerState === "stopped";
+        return r.provisioningState === filters.status;
       });
     }
 
-    // 6. Sorting
+    const filteredCount = items.length;
+
     items.sort((a, b) => {
-      let valA: string = (a[sortField] || "").toString();
-      let valB: string = (b[sortField] || "").toString();
-
-      if (sortField === "provisioningState") {
-        valA = a.powerState || a.provisioningState;
-        valB = b.powerState || b.provisioningState;
-      }
-
-      const cmp = valA.localeCompare(valB, undefined, { numeric: true });
-      return sortOrder === "asc" ? cmp : -cmp;
+      let valA = a[sortField] || "";
+      let valB = b[sortField] || "";
+      if (typeof valA === "string") valA = valA.toLowerCase();
+      if (typeof valB === "string") valB = valB.toLowerCase();
+      if (valA < valB) return sortOrder === "asc" ? -1 : 1;
+      if (valA > valB) return sortOrder === "asc" ? 1 : -1;
+      return 0;
     });
 
-    const filteredCount = items.length;
-    const totalPages = Math.ceil(filteredCount / pageSize) || 1;
-    const safePage = Math.max(1, Math.min(page, totalPages));
-    const startIndex = (safePage - 1) * pageSize;
-    const pagedResources = items.slice(startIndex, startIndex + pageSize);
+    const totalPages = Math.max(1, Math.ceil(filteredCount / pageSize));
+    const safePage = Math.min(Math.max(1, page), totalPages);
+    const startIdx = (safePage - 1) * pageSize;
+    const paginatedItems = items.slice(startIdx, startIdx + pageSize);
 
     return {
-      resources: pagedResources,
+      resources: paginatedItems,
       totalCount: MOCK_RESOURCES.length,
       filteredCount,
       page: safePage,
@@ -148,4 +140,83 @@ export class MockInventoryService implements IInventoryService {
   }
 }
 
-export const inventoryService = new MockInventoryService();
+export class AzureInventoryService implements IInventoryService {
+  private fallbackService = new MockInventoryService();
+
+  public async getResources(
+    params: ResourceQueryParams,
+    signal?: AbortSignal
+  ): Promise<ResourceQueryResult> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params.page) queryParams.set("page", String(params.page));
+      if (params.pageSize) queryParams.set("pageSize", String(params.pageSize));
+      if (params.filters?.search) queryParams.set("search", params.filters.search);
+      if (params.filters?.resourceType && params.filters.resourceType !== "all") {
+        queryParams.set("type", params.filters.resourceType);
+      }
+      if (params.filters?.resourceGroup && params.filters.resourceGroup !== "all") {
+        queryParams.set("resourceGroup", params.filters.resourceGroup);
+      }
+      if (params.filters?.region && params.filters.region !== "all") {
+        queryParams.set("location", params.filters.region);
+      }
+
+      const res = await fetchFromApi<ResourceInventoryResponse>(
+        `/api/resources?${queryParams.toString()}`,
+        { signal }
+      );
+
+      const mapped: AzureResourceItem[] = res.resources.map((r) => ({
+        id: r.id,
+        name: r.name,
+        type: r.type,
+        resourceGroup: r.resourceGroup,
+        location: r.location,
+        locationDisplay: r.location,
+        provisioningState: (r.provisioningState as ProvisioningState) || "Succeeded",
+        tags: r.tags || {},
+        lastObserved: res.lastUpdated,
+        sku: r.sku,
+        powerState: r.type.toLowerCase().includes("virtualmachines") ? ("running" as VmPowerState) : undefined,
+      }));
+
+      const pageSize = params.pageSize || 10;
+      const totalPages = Math.max(1, Math.ceil(res.totalCount / pageSize));
+
+      return {
+        resources: mapped,
+        totalCount: res.totalCount,
+        filteredCount: res.totalCount,
+        page: params.page || 1,
+        pageSize,
+        totalPages,
+        isStale: res.isStale,
+        lastUpdated: res.lastUpdated,
+        isSimulated: false,
+      };
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      console.warn("[InventoryService] Falling back to local data:", err);
+      return this.fallbackService.getResources(params, signal);
+    }
+  }
+
+  public async getResourceById(id: string, signal?: AbortSignal): Promise<AzureResourceItem | null> {
+    try {
+      const res = await fetchFromApi<{ resource: AzureResourceItem }>(
+        `/api/resources/${encodeURIComponent(id)}`,
+        { signal }
+      );
+      return res.resource || null;
+    } catch {
+      return this.fallbackService.getResourceById(id, signal);
+    }
+  }
+
+  public async getFilterOptions() {
+    return this.fallbackService.getFilterOptions();
+  }
+}
+
+export const inventoryService: IInventoryService = new AzureInventoryService();

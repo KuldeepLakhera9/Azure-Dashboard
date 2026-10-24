@@ -11,6 +11,7 @@ import { budgetsRouter } from "./routes/budgets";
 import { metricsRouter } from "./routes/metrics";
 import { alertsRouter } from "./routes/alerts";
 import { authRouter } from "./routes/auth";
+import { azureRouter } from "./routes/azure";
 import { authenticateToken, requireScope } from "./middleware/auth";
 import { errorHandler } from "./middleware/errorHandler";
 
@@ -53,6 +54,7 @@ app.use((req, res, next) => {
 // Public routes
 app.use("/api/health", healthRouter);
 app.use("/api/auth", authRouter);
+app.use("/api/azure", azureRouter);
 
 // Protected routes requiring valid Microsoft Entra ID Bearer Token and Dashboard.Read scope
 app.use("/api/resources", authenticateToken, requireScope("Dashboard.Read"), resourcesRouter);

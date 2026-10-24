@@ -6,17 +6,51 @@ import {
   MetricsResponse,
   SystemHealthResponse,
   AlertsResponse,
+  AzureStatusResponse,
 } from "@adt-ai/shared";
 import { IAzureDataProvider, ResourceFilterOptions } from "./types";
 import { globalCache } from "../../cache";
 import { config } from "../../config";
 
 export class MockAzureDataProvider implements IAzureDataProvider {
+  public async getAzureStatus(): Promise<AzureStatusResponse> {
+    const now = new Date().toISOString();
+    const subId = config.AZURE_SUBSCRIPTION_ID || "f3834a10-6431-4a62-8a1b-738cb5629169";
+    return {
+      subscriptionId: subId,
+      isConfiguredSubscription: subId === "f3834a10-6431-4a62-8a1b-738cb5629169",
+      authAvailable: false,
+      subscriptionAccessible: false,
+      permissions: [
+        {
+          role: "Reader",
+          scope: `/subscriptions/${subId}`,
+          status: "simulated",
+          details: "Running in offline preview/simulation mode. Log in via 'az login' and set USE_MOCK_AZURE=false for live telemetry.",
+        },
+        {
+          role: "Cost Management Reader",
+          scope: `/subscriptions/${subId}`,
+          status: "simulated",
+          details: "Simulated cost and budget telemetry active.",
+        },
+      ],
+      mode: "mock-simulation",
+      actionableGuidance: [
+        "1. Open terminal and run: az login",
+        `2. Select subscription: az account set --subscription "${subId}"`,
+        `3. Verify access: az resource list --subscription "${subId}" --output table`,
+        "4. In apps/api/.env set USE_MOCK_AZURE=false and restart the backend.",
+      ],
+      timestamp: now,
+    };
+  }
+
   public async getSystemHealth(): Promise<SystemHealthResponse> {
     const now = new Date().toISOString();
     return {
       status: "healthy",
-      subscriptionId: config.AZURE_SUBSCRIPTION_ID || "sub-adt-ai-foundation-prod-01",
+      subscriptionId: config.AZURE_SUBSCRIPTION_ID || "f3834a10-6431-4a62-8a1b-738cb5629169",
       subscriptionName: "ADT-AI Production Core",
       timestamp: now,
       version: "1.0.0",

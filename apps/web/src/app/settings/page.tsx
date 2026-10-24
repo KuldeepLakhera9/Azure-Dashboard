@@ -11,6 +11,9 @@ import {
   User,
   FileText,
   AlertTriangle,
+  CheckCircle2,
+  RefreshCw,
+  Terminal,
 } from "lucide-react";
 import { PageHeader } from "../../components/ui/page-header";
 import { Button } from "../../components/ui/button";
@@ -21,6 +24,7 @@ import { Badge } from "../../components/ui/badge";
 import { useTheme } from "../../components/theme-provider";
 import { useAuth } from "../../lib/auth/auth-context";
 import { fetchFromApi } from "../../lib/services/api-client";
+import { AzureStatusResponse } from "@adt-ai/shared";
 
 interface AuditLogRecord {
   id: string;
@@ -37,10 +41,15 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "Admin";
 
-  const [subId, setSubId] = useState("sub-adt-ai-foundation-prod-01");
+  const [subId, setSubId] = useState(
+    process.env.NEXT_PUBLIC_AZURE_SUBSCRIPTION_ID || "f3834a10-6431-4a62-8a1b-738cb5629169"
+  );
   const [operationalTtl, setOperationalTtl] = useState("15");
   const [billingTtl, setBillingTtl] = useState("24");
   const [isSaved, setIsSaved] = useState(false);
+
+  const [azureStatus, setAzureStatus] = useState<AzureStatusResponse | null>(null);
+  const [azureLoading, setAzureLoading] = useState(false);
 
   const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -51,6 +60,18 @@ export default function SettingsPage() {
     if (!isAdmin) return;
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
+  };
+
+  const loadAzureStatus = async () => {
+    setAzureLoading(true);
+    try {
+      const data = await fetchFromApi<AzureStatusResponse>("/api/azure/status");
+      setAzureStatus(data);
+    } catch (err: unknown) {
+      console.warn("Could not retrieve Azure connection status:", err);
+    } finally {
+      setAzureLoading(false);
+    }
   };
 
   const loadAuditLogs = async () => {
@@ -68,6 +89,7 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
+    loadAzureStatus();
     if (isAdmin) {
       loadAuditLogs();
     }
@@ -181,6 +203,106 @@ export default function SettingsPage() {
                 <span>System</span>
               </button>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Azure Subscription & Role-Based Access Diagnostics */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Terminal className="h-5 w-5 text-accent" />
+                <CardTitle>Azure Connection & RBAC Diagnostics</CardTitle>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadAzureStatus}
+                isLoading={azureLoading}
+                leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
+              >
+                Test Connection
+              </Button>
+            </div>
+            <CardDescription>
+              Backend validation of Azure identity, subscription scope, and least-privilege role assignments.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-supporting">
+              <div className="p-3 rounded-control bg-surface-elevated border border-border space-y-1">
+                <span className="text-secondary text-xs block">Configured Subscription ID</span>
+                <span className="font-semibold text-primary font-mono text-xs">
+                  {azureStatus?.subscriptionId || "f3834a10-6431-4a62-8a1b-738cb5629169"}
+                </span>
+              </div>
+              <div className="p-3 rounded-control bg-surface-elevated border border-border space-y-1">
+                <span className="text-secondary text-xs block">Connection Status</span>
+                <div className="flex items-center gap-2">
+                  <Badge variant={azureStatus?.mode === "live-azure" ? "success" : "info"}>
+                    {azureStatus?.mode === "live-azure" ? "Live Azure ARM" : "Offline Simulation"}
+                  </Badge>
+                  {azureStatus?.isConfiguredSubscription && (
+                    <Badge variant="outline" className="text-xs">
+                      Target Verified
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold uppercase text-secondary tracking-wider">
+                Required Azure RBAC Roles (Least-Privilege)
+              </h4>
+              <div className="space-y-2">
+                {azureStatus?.permissions.map((p, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-start justify-between p-3 rounded-control border border-border bg-surface-elevated/50 text-supporting"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-primary">{p.role}</span>
+                        <Badge
+                          variant={
+                            p.status === "verified"
+                              ? "success"
+                              : p.status === "simulated"
+                              ? "info"
+                              : "critical"
+                          }
+                        >
+                          {p.status}
+                        </Badge>
+                      </div>
+                      <span className="text-xs text-secondary font-mono block mt-0.5">
+                        Scope: {p.scope}
+                      </span>
+                      {p.details && (
+                        <p className="text-xs text-secondary mt-1">{p.details}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {azureStatus?.actionableGuidance && azureStatus.actionableGuidance.length > 0 && (
+              <div className="p-3.5 rounded-control bg-surface border border-border text-supporting space-y-2">
+                <div className="flex items-center gap-1.5 text-primary font-semibold text-xs uppercase tracking-wider">
+                  <CheckCircle2 className="h-4 w-4 text-accent" />
+                  <span>Interactive Azure CLI Connection Steps</span>
+                </div>
+                <div className="space-y-1 font-mono text-xs text-secondary">
+                  {azureStatus.actionableGuidance.map((step, idx) => (
+                    <p key={idx} className="bg-surface-elevated px-2.5 py-1.5 rounded border border-border/70 text-primary">
+                      {step}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

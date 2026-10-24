@@ -121,17 +121,18 @@ Key capabilities:
 | `PORT` | Optional | `5000` | Port for the Express HTTP server. In Azure App Service, set to `8080`. |
 | `NODE_ENV` | Optional | `development` | `production` enables strict error sanitization and disables stack traces. |
 | `CORS_ORIGIN` | **Required (Prod)** | `http://localhost:3000` | Allowed frontend origin. Set to the production Vercel URL (e.g., `https://adt-ai-ops.vercel.app`). |
-| `AZURE_SUBSCRIPTION_ID` | **Required (Prod)** | `""` | Target Azure Subscription ID monitored by the dashboard. |
-| `USE_MOCK_AZURE` | Optional | `true` | When `true`, returns simulated Azure data. Set to `false` in production. |
-| `AZURE_TENANT_ID` | Optional | `""` | Azure Entra Tenant ID (used for local service principal auth). |
-| `AZURE_CLIENT_ID` | Optional | `""` | Service Principal Client ID (used for local service principal auth). |
-| `AZURE_CLIENT_SECRET` | Optional | `""` | Service Principal Client Secret (NEVER commit to source control). |
-| `ENTRA_TENANT_ID` | **Required (Prod)** | `""` | Microsoft Entra Tenant ID for cryptographic token verification. |
-| `ENTRA_API_CLIENT_ID` | **Required (Prod)** | `""` | Application (client) ID of `adt-ai-ops-api`. |
-| `ENTRA_API_AUDIENCE` | Optional | `api://adt-ai-ops-api` | Expected `aud` claim in incoming JWT tokens. |
-| `ENTRA_REQUIRED_SCOPE` | Optional | `Dashboard.Read` | Delegated scope required on incoming tokens to access data routes. |
+| `AZURE_SUBSCRIPTION_ID` | **Required** | `f3834a10-6431-4a62-8a1b-738cb5629169` | Target Azure Subscription ID for ADT-AI Training Foundation. |
+| `USE_MOCK_AZURE` | Optional | `true` | When `true`, returns simulated Azure data. Set to `false` for live Azure ARM data. |
+| `AZURE_USE_MANAGED_IDENTITY` | Optional | `false` | When deployed to Azure App Service, set to `true`. |
+| `AZURE_RESOURCE_REFRESH_INTERVAL_MINUTES` | Optional | `15` | Polling cycle for Resource Graph and VM power state telemetry. |
+| `AZURE_COST_CACHE_TTL_HOURS` | Optional | `24` | Cache cooldown for Cost Management API queries. |
+| `AZURE_COST_REFRESH_INTERVAL_HOURS` | Optional | `24` | Background refresh schedule for cost summaries. |
 | `OPERATIONAL_CACHE_TTL_MS` | Optional | `900000` | In-memory cache duration for inventory and metrics (15 minutes). |
 | `BILLING_CACHE_TTL_MS` | Optional | `86400000` | Cooldown duration for Cost Management API queries (24 hours). |
+| `ENTRA_TENANT_ID` | Optional | `""` | Microsoft Entra Tenant ID for cryptographic token verification. |
+| `ENTRA_API_CLIENT_ID` | Optional | `""` | Application (client) ID of `adt-ai-ops-api`. |
+| `ENTRA_API_AUDIENCE` | Optional | `api://adt-ai-ops-api` | Expected `aud` claim in incoming JWT tokens. |
+| `ENTRA_REQUIRED_SCOPE` | Optional | `Dashboard.Read` | Delegated scope required on incoming tokens to access data routes. |
 
 ### Frontend Configuration (`apps/web/.env.local`)
 
@@ -141,43 +142,54 @@ Key capabilities:
 | Variable Name | Required | Default | Meaning & Production Usage |
 | :--- | :--- | :--- | :--- |
 | `NEXT_PUBLIC_API_URL` | **Required** | `http://localhost:5000/api` | Base URL of the Express API (e.g., `https://adt-ai-ops-api.azurewebsites.net/api`). |
-| `NEXT_PUBLIC_AZURE_TENANT_ID` | **Required** | `""` | Microsoft Entra ID Tenant ID for MSAL authentication. |
-| `NEXT_PUBLIC_ENTRA_CLIENT_ID` | **Required** | `""` | Application (client) ID of the frontend SPA registration (`adt-ai-ops-spa`). |
-| `NEXT_PUBLIC_ENTRA_REDIRECT_URI` | Optional | `http://localhost:3000/login` | Production redirect URI (e.g., `https://adt-ai-ops.vercel.app/login`). |
+| `NEXT_PUBLIC_AZURE_SUBSCRIPTION_ID` | Optional | `f3834a10-6431-4a62-8a1b-738cb5629169` | Active subscription context displayed in UI headers and telemetry. |
+| `NEXT_PUBLIC_AZURE_TENANT_ID` | Optional | `""` | Microsoft Entra ID Tenant ID for MSAL authentication. |
+| `NEXT_PUBLIC_AZURE_CLIENT_ID` | Optional | `""` | Application (client) ID of the frontend SPA registration (`adt-ai-ops-spa`). |
+| `NEXT_PUBLIC_AZURE_REDIRECT_URI` | Optional | `http://localhost:3000/login` | Production redirect URI (e.g., `https://adt-ai-ops.vercel.app/login`). |
 | `NEXT_PUBLIC_ENTRA_API_SCOPE` | Optional | `api://adt-ai-ops-api/Dashboard.Read` | Delegated permission scope requested during user login. |
 
 ---
 
-## 6. Microsoft Entra ID App Registration Setup
+## 6. Local Azure CLI Interactive Connection Steps
 
-The application follows Microsoft's recommended dual-registration pattern:
+To connect the operations center to your live Azure subscription locally without hardcoding secrets:
 
-### 1. Backend API Registration (`adt-ai-ops-api`)
-1. In the **Microsoft Entra admin center**, navigate to **App registrations** > **New registration**.
-2. Name: `adt-ai-ops-api`. Supported account types: **Single tenant**.
-3. Under **Expose an API**:
-   - Set Application ID URI: `api://adt-ai-ops-api` (or `api://<api-client-id>`).
-   - Add a scope:
-     - Scope name: `Dashboard.Read`
-     - Who can consent: **Admins and users**
-     - Display name: `Read Azure Operations Center Data`
-     - Description: `Allows users to view Azure inventory, performance metrics, and cost data.`
-4. Under **App roles**:
-   - Create Role: `Dashboard.Viewer` (Allowed member types: Users/Groups).
-   - Create Role: `Dashboard.Admin` (Allowed member types: Users/Groups, grants access to `/api/auth/audit`).
-
-### 2. Frontend SPA Registration (`adt-ai-ops-spa`)
-1. Create a new App registration: `adt-ai-ops-spa`.
-2. Under **Authentication**:
-   - Click **Add a platform** > **Single-page application (SPA)**.
-   - Redirect URIs:
-     - Development: `http://localhost:3000/login`
-     - Production: `https://<your-vercel-deployment>.vercel.app/login`
-   - Implicit grant and hybrid flows: Leave both **unchecked** (MSAL uses Auth Code Flow with PKCE).
-3. Under **API permissions**:
-   - Click **Add a permission** > **APIs my organization uses** > Select `adt-ai-ops-api`.
-   - Select delegated permission: `Dashboard.Read`.
-   - Grant admin consent if required by your organization policy.
+1. **Install the Azure CLI** if not already present on your workstation:
+   ```bash
+   az --version
+   ```
+2. **Open a terminal in the project directory**.
+3. **Sign in interactively**:
+   ```bash
+   az login
+   ```
+4. **Select the target subscription**:
+   ```bash
+   az account set --subscription "f3834a10-6431-4a62-8a1b-738cb5629169"
+   ```
+5. **Verify the selected subscription**:
+   ```bash
+   az account show --output table
+   ```
+6. **Confirm your identity can query resources**:
+   ```bash
+   az resource list --subscription "f3834a10-6431-4a62-8a1b-738cb5629169" --query "[].{Name:name,Type:type,Location:location}" --output table
+   ```
+7. **Install project dependencies using npm**:
+   ```bash
+   npm install
+   ```
+8. **Configure the local environment**:
+   In `apps/api/.env`, toggle `USE_MOCK_AZURE=false` to use the authenticated Azure CLI identity via `DefaultAzureCredential`:
+   ```env
+   AZURE_SUBSCRIPTION_ID=f3834a10-6431-4a62-8a1b-738cb5629169
+   USE_MOCK_AZURE=false
+   ```
+9. **Start the development server**:
+   ```bash
+   npm run dev
+   ```
+10. **Open the browser** at `http://localhost:3000/settings` and click **Test Connection** to verify live ARM telemetry and RBAC permissions.
 
 ---
 
@@ -197,13 +209,13 @@ PRINCIPAL_ID=$(az webapp identity show \
 az role assignment create \
   --assignee $PRINCIPAL_ID \
   --role "Reader" \
-  --scope "/subscriptions/<YOUR_AZURE_SUBSCRIPTION_ID>"
+  --scope "/subscriptions/f3834a10-6431-4a62-8a1b-738cb5629169"
 
 # 2. Cost Management Reader (Cost Management Query API & Budgets)
 az role assignment create \
   --assignee $PRINCIPAL_ID \
   --role "Cost Management Reader" \
-  --scope "/subscriptions/<YOUR_AZURE_SUBSCRIPTION_ID>"
+  --scope "/subscriptions/f3834a10-6431-4a62-8a1b-738cb5629169"
 ```
 
 > [!CAUTION]
@@ -219,7 +231,7 @@ All commands are managed from the root using npm workspaces:
 # Install dependencies across all packages
 npm install
 
-# Run automated integration tests (Auth, APIs, Durable Billing Store)
+# Run automated integration tests (Auth, Operational APIs, Durable Billing Store, Azure Status)
 npm run test
 
 # Run strict TypeScript validation across all workspaces

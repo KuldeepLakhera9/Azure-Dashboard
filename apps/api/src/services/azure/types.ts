@@ -6,6 +6,7 @@ import {
   MetricsResponse,
   SystemHealthResponse,
   AlertsResponse,
+  AzureStatusResponse,
 } from "@adt-ai/shared";
 
 export interface ResourceFilterOptions {
@@ -20,6 +21,7 @@ export interface ResourceFilterOptions {
 
 export interface IAzureDataProvider {
   getSystemHealth(): Promise<SystemHealthResponse>;
+  getAzureStatus(): Promise<AzureStatusResponse>;
   getResourceInventory(options?: ResourceFilterOptions): Promise<ResourceInventoryResponse>;
   getResourceDetail(resourceId: string): Promise<Record<string, unknown> | null>;
   getVmInventory(): Promise<VmInventoryResponse>;

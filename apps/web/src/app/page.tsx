@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import {
   Layers,
@@ -28,6 +28,8 @@ import { CostByServiceChart } from "../components/dashboard/cost-by-service-char
 import { ResourceDistributionChart } from "../components/dashboard/resource-distribution-chart";
 import { BudgetConsumptionCard } from "../components/dashboard/budget-consumption-card";
 import { AlertsPanel } from "../components/dashboard/alerts-panel";
+import { fetchFromApi } from "../lib/services/api-client";
+import { SystemHealthResponse, CostDataResponse, VmInventoryResponse, ResourceInventoryResponse } from "@adt-ai/shared";
 
 export default function OverviewPage() {
   const [data, setData] = useState(MOCK_OVERVIEW_DATA);
@@ -36,25 +38,90 @@ export default function OverviewPage() {
     MOCK_OVERVIEW_DATA.freshness.operational.lastRefreshed
   );
 
-  // Manual refresh interaction: simulates data refresh without implying real Azure API query
-  const handleRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    setTimeout(() => {
+  const syncBackendData = useCallback(async () => {
+    try {
+      const [health, costs, vms, resources] = await Promise.allSettled([
+        fetchFromApi<SystemHealthResponse>("/api/health"),
+        fetchFromApi<CostDataResponse>("/api/costs"),
+        fetchFromApi<VmInventoryResponse>("/api/resources/vms"),
+        fetchFromApi<ResourceInventoryResponse>("/api/resources"),
+      ]);
+
       const now = new Date().toISOString();
       setLastRefreshedTime(now);
-      setData((prev) => ({
-        ...prev,
-        freshness: {
-          ...prev.freshness,
-          operational: {
-            ...prev.freshness.operational,
-            lastRefreshed: now,
-          },
-        },
-      }));
-      setIsRefreshing(false);
-    }, 600);
+
+      setData((prev) => {
+        let updated = { ...prev };
+
+        if (health.status === "fulfilled" && health.value) {
+          const h = health.value;
+          const isLive = h.authMode !== "mock-simulation";
+          updated.subscription = {
+            id: h.subscriptionId || "f3834a10-6431-4a62-8a1b-738cb5629169",
+            name: h.subscriptionName || "ADT-AI Production Core",
+            environment: isLive ? "Azure Production (Live ARM)" : "Simulation Preview (Local)",
+            isSimulated: !isLive,
+            simulationNotice: isLive
+              ? "LIVE AZURE CONNECTION • Monitored via DefaultAzureCredential / Managed Identity."
+              : `OFFLINE SIMULATION • Subscription f3834a10-6431-4a62-8a1b-738cb5629169. Run 'az login' for live Azure ARM telemetry.`,
+          };
+        }
+
+        if (resources.status === "fulfilled" && resources.value) {
+          const res = resources.value;
+          updated.kpis.totalResources = {
+            ...updated.kpis.totalResources,
+            value: res.totalCount,
+            formattedValue: String(res.totalCount),
+          };
+        }
+
+        if (vms.status === "fulfilled" && vms.value) {
+          const v = vms.value;
+          updated.kpis.runningVms = {
+            ...updated.kpis.runningVms,
+            value: { running: v.runningCount, total: v.totalCount },
+            formattedValue: `${v.runningCount} / ${v.totalCount}`,
+            subtext: `${v.stoppedCount + v.deallocatedCount} Stopped or Deallocated`,
+          };
+        }
+
+        if (costs.status === "fulfilled" && costs.value) {
+          const c = costs.value;
+          updated.kpis.monthToDateCost = {
+            ...updated.kpis.monthToDateCost,
+            value: c.monthToDateTotal,
+            formattedValue: `$${c.monthToDateTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            subtext: `${c.currency} • Cooldown Active`,
+          };
+          if (c.byService && c.byService.length > 0) {
+            const colors = ["#2563EB", "#7C3AED", "#0891B2", "#059669", "#D97706", "#DC2626"];
+            updated.costByService = c.byService.map((s, idx) => ({
+              serviceName: s.serviceName,
+              cost: s.cost,
+              currency: s.currency,
+              percentage: s.percentage,
+              color: colors[idx % colors.length] || "#2563EB",
+            }));
+          }
+        }
+
+        return updated;
+      });
+    } catch (err) {
+      console.warn("[OverviewPage] Failed to synchronize live telemetry:", err);
+    }
   }, []);
+
+  useEffect(() => {
+    syncBackendData();
+  }, [syncBackendData]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await syncBackendData();
+    setIsRefreshing(false);
+  }, [syncBackendData]);
 
   return (
     <div className="space-y-8">

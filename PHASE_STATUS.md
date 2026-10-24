@@ -77,6 +77,8 @@ npm run test
 #   ✔ GET /api/budgets returns configured budgets without fabricating missing ones
 #   ✔ GET /api/metrics returns timeseries without fabricating guest memory
 #   ✔ GET /api/alerts returns active and resolved subscription alerts
+#   ✔ GET /api/azure/status validates target subscription configuration and permissions
+#   ✔ GET /api/azure/resources operates as supported alias to inventory endpoint
 # ▶ Security & Token Validation Middleware
 #   ✔ rejects unauthenticated request to /api/resources with 401 Unauthorized
 #   ✔ rejects unauthenticated request to /api/costs with 401 Unauthorized
@@ -89,7 +91,7 @@ npm run test
 #   ✔ stores and retrieves a billing snapshot with 24h cooldown
 #   ✔ identifies expired cooldown correctly
 #   ✔ cleans up test cache files safely
-# ℹ tests 15, suites 3, pass 15, fail 0 (Duration: ~733ms)
+# ℹ tests 17, suites 3, pass 17, fail 0 (Duration: ~780ms)
 
 # 4. Production Build
 npm run build
@@ -98,14 +100,14 @@ npm run build
 # > @adt-ai/api@1.0.0 build -> tsc -b
 # > @adt-ai/web@1.0.0 build -> next build
 # Route (app)                              Size     First Load JS
-# ┌ ○ /                                    18.1 kB         217 kB
+# ┌ ○ /                                    19.2 kB         218 kB
 # ├ ○ /_not-found                          876 B          88.4 kB
-# ├ ○ /budgets                             8.9 kB          106 kB
-# ├ ○ /costs                               8.7 kB          207 kB
+# ├ ○ /budgets                             9.66 kB         107 kB
+# ├ ○ /costs                               9.46 kB         208 kB
 # ├ ○ /login                               4.46 kB          92 kB
 # ├ ○ /performance                         5.13 kB         207 kB
-# ├ ○ /resources                           7.64 kB         108 kB
-# ├ ○ /settings                            6.89 kB         104 kB
+# ├ ○ /resources                           8.4 kB          109 kB
+# ├ ○ /settings                            7.62 kB         105 kB
 # └ ○ /unauthorized                        4.22 kB        91.7 kB
 # + First Load JS shared by all            87.5 kB
 # All 11 routes prerendered successfully (Exit code 0)

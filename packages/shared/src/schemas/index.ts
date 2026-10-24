@@ -215,3 +215,26 @@ export const AlertsResponseSchema = z.object({
 });
 
 export type AlertsResponse = z.infer<typeof AlertsResponseSchema>;
+
+// --- Azure Connection & Permission Status ---
+export const AzurePermissionStatusSchema = z.object({
+  role: z.string(),
+  scope: z.string(),
+  status: z.enum(["verified", "missing", "unverified", "simulated"]),
+  details: z.string().optional(),
+});
+
+export type AzurePermissionStatus = z.infer<typeof AzurePermissionStatusSchema>;
+
+export const AzureStatusResponseSchema = z.object({
+  subscriptionId: z.string(),
+  isConfiguredSubscription: z.boolean(),
+  authAvailable: z.boolean(),
+  subscriptionAccessible: z.boolean(),
+  permissions: z.array(AzurePermissionStatusSchema),
+  mode: z.enum(["live-azure", "mock-simulation"]),
+  actionableGuidance: z.array(z.string()),
+  timestamp: z.string(),
+});
+
+export type AzureStatusResponse = z.infer<typeof AzureStatusResponseSchema>;
