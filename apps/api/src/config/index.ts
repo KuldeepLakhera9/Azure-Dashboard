@@ -13,10 +13,19 @@ const EnvSchema = z.object({
   USE_MOCK_AZURE: z
     .string()
     .transform((val) => val === "true" || val === "1")
-    .default("true"), // Default to true locally until Azure credentials are provided
+    .default("true"),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   OPERATIONAL_CACHE_TTL_MS: z.coerce.number().default(15 * 60 * 1000), // 15 minutes
   BILLING_CACHE_TTL_MS: z.coerce.number().default(24 * 60 * 60 * 1000), // 24 hours
+  // Microsoft Entra ID Authentication
+  AUTH_ENABLED: z
+    .string()
+    .transform((val) => val === "true" || val === "1")
+    .default("true"),
+  AZURE_AD_TENANT_ID: z.string().optional(),
+  AZURE_AD_API_CLIENT_ID: z.string().optional(),
+  AZURE_AD_AUDIENCE: z.string().optional(),
+  REQUIRED_SCOPE: z.string().default("Dashboard.Read"),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

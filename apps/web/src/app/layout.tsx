@@ -3,6 +3,8 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "../components/theme-provider";
 import { AppShell } from "../components/shell/app-shell";
+import { AuthProvider } from "../lib/auth/auth-context";
+import { AuthGuard } from "../components/auth/auth-guard";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -50,7 +52,11 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-page text-primary font-sans antialiased selection:bg-accent selection:text-white">
         <ThemeProvider>
-          <AppShell>{children}</AppShell>
+          <AuthProvider>
+            <AuthGuard>
+              <AppShell>{children}</AppShell>
+            </AuthGuard>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
