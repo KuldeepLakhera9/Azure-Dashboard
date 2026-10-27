@@ -171,4 +171,94 @@ export class MockPerformanceService implements IPerformanceService {
   }
 }
 
-export const performanceService = new MockPerformanceService();
+import { fetchFromApi } from "./api-client";
+import { MetricsResponse } from "@adt-ai/shared";
+
+export class AzurePerformanceService implements IPerformanceService {
+  private fallbackService = new MockPerformanceService();
+
+  public async getPerformance(
+    resourceId: string,
+    timeRange: PerformanceTimeRange,
+    forceStatus?: "healthy" | "no-data" | "insufficient-permissions",
+    signal?: AbortSignal
+  ): Promise<ResourcePerformanceResult> {
+    if (forceStatus && forceStatus !== "healthy") {
+      return this.fallbackService.getPerformance(resourceId, timeRange, forceStatus, signal);
+    }
+
+    const parts = resourceId.split("/");
+    const resourceName = parts[parts.length - 1] || "Selected Resource";
+
+    try {
+      // Calculate timespan ISO string for Azure Monitor API
+      const now = new Date();
+      let startTime = new Date(now.getTime() - 60 * 60 * 1000);
+      if (timeRange === "PT6H") startTime = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+      else if (timeRange === "PT24H") startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      else if (timeRange === "P7D") startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      const timespan = `${startTime.toISOString()}/${now.toISOString()}`;
+      const queryParams = new URLSearchParams({
+        resourceId,
+        timespan,
+      });
+
+      const res = await fetchFromApi<MetricsResponse>(`/api/metrics?${queryParams.toString()}`, { signal });
+      const metricsList = res.metrics || [];
+
+      const formatPoints = (points: Array<{ timestamp: string; average?: number; total?: number }>) =>
+        points.map((p) => ({
+          timestamp: p.timestamp,
+          formattedTime: new Date(p.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          average: p.average !== undefined ? Math.round(p.average * 10) / 10 : p.total !== undefined ? Math.round(p.total * 10) / 10 : 0,
+        }));
+
+      const cpuRaw = metricsList.find((m) => m.metricName.toLowerCase().includes("cpu"));
+      const diskRaw = metricsList.find((m) => m.metricName.toLowerCase().includes("disk"));
+      const networkRaw = metricsList.find((m) => m.metricName.toLowerCase().includes("network"));
+
+      const cpuPoints = formatPoints(cpuRaw?.dataPoints || []);
+      const diskPoints = formatPoints(diskRaw?.dataPoints || []);
+      const networkPoints = formatPoints(networkRaw?.dataPoints || []);
+
+      const hasTelemetryData = cpuPoints.some((p) => (p.average ?? 0) > 0) || diskPoints.length > 0;
+
+      return {
+        resourceId,
+        resourceName,
+        timeRange,
+        lastUpdated: res.lastUpdated,
+        hostCollectionStatus: hasTelemetryData ? "healthy" : "no-data",
+        cpuSeries: {
+          metricName: cpuRaw?.metricName || "Percentage CPU",
+          unit: cpuRaw?.unit || "Percent",
+          resourceId,
+          dataPoints: cpuPoints,
+        },
+        diskSeries: {
+          metricName: diskRaw?.metricName || "Disk Read/Write Bytes/sec",
+          unit: diskRaw?.unit || "Bytes",
+          resourceId,
+          dataPoints: diskPoints,
+        },
+        networkSeries: {
+          metricName: networkRaw?.metricName || "Network In Total",
+          unit: networkRaw?.unit || "Bytes",
+          resourceId,
+          dataPoints: networkPoints,
+        },
+        guestMemory: {
+          isConfigured: false,
+          statusMessage: "Guest OS Memory Telemetry Not Configured. Azure Monitor collects hypervisor metrics by default; in-guest RAM metrics require the Azure Monitor Agent (AMA) extension.",
+        },
+      };
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      console.warn("[PerformanceService] Falling back to sample metrics:", err);
+      return this.fallbackService.getPerformance(resourceId, timeRange, forceStatus, signal);
+    }
+  }
+}
+
+export const performanceService = new AzurePerformanceService();

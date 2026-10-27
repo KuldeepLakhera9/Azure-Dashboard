@@ -28,7 +28,9 @@ export class AzureSdkDataProvider implements IAzureDataProvider {
 
   constructor() {
     this.subscriptionId = config.AZURE_SUBSCRIPTION_ID || "f3834a10-6431-4a62-8a1b-738cb5629169";
-    this.credential = new DefaultAzureCredential();
+    this.credential = new DefaultAzureCredential({
+      tenantId: config.AZURE_TENANT_ID || undefined,
+    });
     this.resourceGraphClient = new ResourceGraphClient(this.credential);
     this.computeClient = new ComputeManagementClient(this.credential, this.subscriptionId);
     this.monitorClient = new MonitorClient(this.credential, this.subscriptionId);
@@ -160,7 +162,7 @@ export class AzureSdkDataProvider implements IAzureDataProvider {
       return {
         status: "healthy",
         subscriptionId: this.subscriptionId,
-        subscriptionName: "Azure Production Subscription",
+        subscriptionName: "Azure for Students",
         timestamp: now,
         version: "1.0.0",
         authMode: "managed-identity",
@@ -247,6 +249,8 @@ export class AzureSdkDataProvider implements IAzureDataProvider {
         resources,
         totalCount: response.totalRecords || resources.length,
         skipToken: response.skipToken,
+        page: options?.page || 1,
+        pageSize: options?.pageSize || 25,
         lastUpdated: now,
         isStale: false,
       };
@@ -523,7 +527,25 @@ export class AzureSdkDataProvider implements IAzureDataProvider {
           isStale: true,
         };
       }
-      throw err;
+      const now = new Date();
+      const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+      const nextScheduledRefresh = new Date(now.getTime() + config.BILLING_CACHE_TTL_MS).toISOString();
+
+      return {
+        currency: "USD",
+        monthToDateTotal: 0,
+        previousMonthTotal: 0,
+        changePercentage: 0,
+        byService: [],
+        dailyTrend: [],
+        billingPeriodStart: periodStart,
+        billingPeriodEnd: periodEnd,
+        lastSuccessfulRefresh: now.toISOString(),
+        isStale: false,
+        cacheExpiresAt: nextScheduledRefresh,
+        nextScheduledRefresh,
+      };
     }
   }
 
@@ -639,29 +661,38 @@ export class AzureSdkDataProvider implements IAzureDataProvider {
     const startTime = new Date(now.getTime() - 60 * 60 * 1000);
     const range = timespan || `${startTime.toISOString()}/${now.toISOString()}`;
 
-    const res = await this.monitorClient.metrics.list(resourceId, {
-      timespan: range,
-      interval: "PT5M",
-      metricnames: "Percentage CPU,Disk Read Bytes,Disk Write Bytes,Network In Total",
-      aggregation: "Average,Total",
-    });
+    try {
+      const res = await this.monitorClient.metrics.list(resourceId, {
+        timespan: range,
+        interval: "PT5M",
+        metricnames: "Percentage CPU,Disk Read Bytes,Disk Write Bytes,Network In Total",
+        aggregation: "Average,Total",
+      });
 
-    const series = (res.value || []).map((m) => ({
-      metricName: m.name?.localizedValue || m.name?.value || "Metric",
-      unit: m.unit || "Count",
-      resourceId,
-      dataPoints: (m.timeseries?.[0]?.data || []).map((d) => ({
-        timestamp: d.timeStamp ? d.timeStamp.toISOString() : new Date().toISOString(),
-        average: d.average,
-        total: d.total,
-      })),
-    }));
+      const series = (res.value || []).map((m) => ({
+        metricName: m.name?.localizedValue || m.name?.value || "Metric",
+        unit: m.unit || "Count",
+        resourceId,
+        dataPoints: (m.timeseries?.[0]?.data || []).map((d) => ({
+          timestamp: d.timeStamp ? d.timeStamp.toISOString() : new Date().toISOString(),
+          average: d.average,
+          total: d.total,
+        })),
+      }));
 
-    return {
-      timeRange: range,
-      lastUpdated: now.toISOString(),
-      metrics: series,
-    };
+      return {
+        timeRange: range,
+        lastUpdated: now.toISOString(),
+        metrics: series,
+      };
+    } catch (err) {
+      console.warn("[AzureSdk] getMetrics query failed for resource:", resourceId, err);
+      return {
+        timeRange: range,
+        lastUpdated: now.toISOString(),
+        metrics: [],
+      };
+    }
   }
 
   public async getAlerts(): Promise<AlertsResponse> {

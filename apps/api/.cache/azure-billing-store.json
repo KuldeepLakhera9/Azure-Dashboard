@@ -1,0 +1,65 @@
+{
+  "f3834a10-6431-4a62-8a1b-738cb5629169": {
+    "subscriptionId": "f3834a10-6431-4a62-8a1b-738cb5629169",
+    "data": {
+      "currency": "INR",
+      "monthToDateTotal": 171.82,
+      "previousMonthTotal": 0,
+      "changePercentage": 0,
+      "byService": [
+        {
+          "serviceName": "Azure Data Factory v2",
+          "cost": 0.04,
+          "currency": "INR",
+          "percentage": 0
+        },
+        {
+          "serviceName": "Bandwidth",
+          "cost": 0.03,
+          "currency": "INR",
+          "percentage": 0
+        },
+        {
+          "serviceName": "SQL Database",
+          "cost": 0,
+          "currency": "INR",
+          "percentage": 0
+        },
+        {
+          "serviceName": "Storage",
+          "cost": 30.05,
+          "currency": "INR",
+          "percentage": 17.5
+        },
+        {
+          "serviceName": "Virtual Machines",
+          "cost": 106.96,
+          "currency": "INR",
+          "percentage": 62.2
+        },
+        {
+          "serviceName": "Virtual Machines Licenses",
+          "cost": 13.59,
+          "currency": "INR",
+          "percentage": 7.9
+        },
+        {
+          "serviceName": "Virtual Network",
+          "cost": 21.15,
+          "currency": "INR",
+          "percentage": 12.3
+        }
+      ],
+      "dailyTrend": [],
+      "billingPeriodStart": "2026-09-30T18:30:00.000Z",
+      "billingPeriodEnd": "2026-10-31T18:29:59.000Z",
+      "lastSuccessfulRefresh": "2026-10-24T09:14:05.181Z",
+      "isStale": false,
+      "cacheExpiresAt": "2026-10-25T09:14:05.181Z",
+      "nextScheduledRefresh": "2026-10-25T09:14:05.181Z"
+    },
+    "lastSuccessfulQueryTime": "2026-10-24T09:14:05.183Z",
+    "nextAllowedQueryTime": "2026-10-25T09:14:05.183Z",
+    "cooldownMs": 86400000
+  }
+}

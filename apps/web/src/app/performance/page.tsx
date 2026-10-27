@@ -34,7 +34,8 @@ import {
   PerformanceTimeRange,
   ResourcePerformanceResult,
 } from "../../lib/services/performance-service";
-import { MOCK_RESOURCES } from "../../lib/mock-data/inventory";
+import { inventoryService } from "../../lib/services/inventory-service";
+import { AzureResourceItem } from "../../lib/mock-data/inventory";
 
 interface CustomChartTooltipProps {
   active?: boolean;
@@ -60,10 +61,10 @@ function CustomChartTooltip({ active, payload, label, unit = "" }: CustomChartTo
 
 function PerformanceContent() {
   const searchParams = useSearchParams();
-  const initialResourceId =
-    searchParams.get("resource") || MOCK_RESOURCES[0]?.id || "";
+  const paramResource = searchParams.get("resource");
 
-  const [selectedResourceId, setSelectedResourceId] = useState<string>(initialResourceId);
+  const [availableResources, setAvailableResources] = useState<AzureResourceItem[]>([]);
+  const [selectedResourceId, setSelectedResourceId] = useState<string>(paramResource || "");
   const [timeRange, setTimeRange] = useState<PerformanceTimeRange>("PT1H");
   const [simulatedStatus, setSimulatedStatus] = useState<"healthy" | "no-data" | "insufficient-permissions">("healthy");
 
@@ -71,8 +72,23 @@ function PerformanceContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Fetch real resources on mount to populate the resource selector
+  useEffect(() => {
+    inventoryService.getResources({ pageSize: 100 }).then((res) => {
+      if (res.resources && res.resources.length > 0) {
+        setAvailableResources(res.resources);
+        // Default to a VM if available, or the first resource
+        if (!paramResource) {
+          const vm = res.resources.find((r) => r.type.toLowerCase().includes("virtualmachines"));
+          setSelectedResourceId(vm ? vm.id : res.resources[0]!.id);
+        }
+      }
+    });
+  }, [paramResource]);
+
   const fetchPerformance = useCallback(
     async (isManual = false) => {
+      if (!selectedResourceId) return;
       if (isManual) setIsRefreshing(true);
       else setIsLoading(true);
 
@@ -102,7 +118,7 @@ function PerformanceContent() {
     fetchPerformance();
   }, [fetchPerformance]);
 
-  const selectedResource = MOCK_RESOURCES.find((r) => r.id === selectedResourceId);
+  const selectedResource = availableResources.find((r) => r.id === selectedResourceId);
   const isVm = selectedResource?.type.includes("virtualMachines");
 
   return (
@@ -138,9 +154,9 @@ function PerformanceContent() {
                 value={selectedResourceId}
                 onChange={(e) => setSelectedResourceId(e.target.value)}
               >
-                {MOCK_RESOURCES.map((r) => (
+                {availableResources.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.name} ({r.type.replace("Microsoft.", "")} — {r.locationDisplay})
+                    {r.name} ({r.type.replace("Microsoft.", "")} — {r.location})
                   </option>
                 ))}
               </Select>

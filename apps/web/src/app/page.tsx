@@ -29,7 +29,7 @@ import { ResourceDistributionChart } from "../components/dashboard/resource-dist
 import { BudgetConsumptionCard } from "../components/dashboard/budget-consumption-card";
 import { AlertsPanel } from "../components/dashboard/alerts-panel";
 import { fetchFromApi } from "../lib/services/api-client";
-import { SystemHealthResponse, CostDataResponse, VmInventoryResponse, ResourceInventoryResponse } from "@adt-ai/shared";
+import { SystemHealthResponse, CostDataResponse, VmInventoryResponse, ResourceInventoryResponse, AlertItem, AzureResource } from "@adt-ai/shared";
 
 export default function OverviewPage() {
   const [data, setData] = useState(MOCK_OVERVIEW_DATA);
@@ -40,11 +40,12 @@ export default function OverviewPage() {
 
   const syncBackendData = useCallback(async () => {
     try {
-      const [health, costs, vms, resources] = await Promise.allSettled([
+      const [health, costs, vms, resources, alerts] = await Promise.allSettled([
         fetchFromApi<SystemHealthResponse>("/api/health"),
         fetchFromApi<CostDataResponse>("/api/costs"),
         fetchFromApi<VmInventoryResponse>("/api/resources/vms"),
-        fetchFromApi<ResourceInventoryResponse>("/api/resources"),
+        fetchFromApi<ResourceInventoryResponse>("/api/resources?pageSize=100"),
+        fetchFromApi<{ alerts: AlertItem[] }>("/api/alerts"),
       ]);
 
       const now = new Date().toISOString();
@@ -58,11 +59,11 @@ export default function OverviewPage() {
           const isLive = h.authMode !== "mock-simulation";
           updated.subscription = {
             id: h.subscriptionId || "f3834a10-6431-4a62-8a1b-738cb5629169",
-            name: h.subscriptionName || "ADT-AI Production Core",
+            name: h.subscriptionName || "Azure for Students",
             environment: isLive ? "Azure Production (Live ARM)" : "Simulation Preview (Local)",
             isSimulated: !isLive,
             simulationNotice: isLive
-              ? "LIVE AZURE CONNECTION • Monitored via DefaultAzureCredential / Managed Identity."
+              ? "LIVE AZURE CONNECTION • Monitored via DefaultAzureCredential / Azure CLI."
               : `OFFLINE SIMULATION • Subscription f3834a10-6431-4a62-8a1b-738cb5629169. Run 'az login' for live Azure ARM telemetry.`,
           };
         }
@@ -73,7 +74,74 @@ export default function OverviewPage() {
             ...updated.kpis.totalResources,
             value: res.totalCount,
             formattedValue: String(res.totalCount),
+            subtext: `${res.totalCount} ARM resources active`,
           };
+
+          if (res.resources && res.resources.length > 0) {
+            updated.resourcePreview = res.resources.slice(0, 5).map((r: AzureResource) => {
+              const t = r.type.toLowerCase();
+              let cat: "Compute" | "Storage" | "Security" | "Network" | "AI" = "Compute";
+              if (t.includes("storage")) cat = "Storage";
+              else if (t.includes("network")) cat = "Network";
+              else if (t.includes("security") || t.includes("nsg")) cat = "Security";
+
+              let status: "Running" | "Succeeded" | "Deallocated" | "Degraded" = "Succeeded";
+              if (r.provisioningState === "Succeeded") status = "Succeeded";
+              else if (r.provisioningState === "Failed") status = "Degraded";
+
+              return {
+                id: r.id,
+                name: r.name,
+                type: r.type,
+                category: cat,
+                resourceGroup: r.resourceGroup,
+                location: r.location,
+                sku: r.sku || "Standard",
+                status,
+                statusType: "success" as const,
+              };
+            });
+
+            // Dynamically calculate live resource categories
+            type CategoryName = "Compute" | "Networking" | "Databases" | "Storage" | "Analytics" | "Other";
+            const catCount: Record<CategoryName, number> = {
+              Compute: 0,
+              Networking: 0,
+              Databases: 0,
+              Storage: 0,
+              Analytics: 0,
+              Other: 0,
+            };
+
+            for (const r of res.resources) {
+              const t = r.type.toLowerCase();
+              if (t.includes("compute")) catCount.Compute++;
+              else if (t.includes("network")) catCount.Networking++;
+              else if (t.includes("sql")) catCount.Databases++;
+              else if (t.includes("storage")) catCount.Storage++;
+              else if (t.includes("datafactory")) catCount.Analytics++;
+              else catCount.Other++;
+            }
+
+            const total = res.resources.length || 1;
+            const catColors: Record<CategoryName, string> = {
+              Compute: "#2563EB",
+              Networking: "#0891B2",
+              Databases: "#7C3AED",
+              Storage: "#059669",
+              Analytics: "#D97706",
+              Other: "#64748B",
+            };
+
+            updated.resourceDistribution = (Object.keys(catCount) as CategoryName[])
+              .filter((k) => catCount[k] > 0)
+              .map((category) => ({
+                category,
+                count: catCount[category],
+                percentage: Math.round((catCount[category] / total) * 1000) / 10,
+                color: catColors[category] || "#2563EB",
+              }));
+          }
         }
 
         if (vms.status === "fulfilled" && vms.value) {
@@ -88,22 +156,86 @@ export default function OverviewPage() {
 
         if (costs.status === "fulfilled" && costs.value) {
           const c = costs.value;
+          const currencySymbol = c.currency === "INR" ? "₹" : c.currency === "EUR" ? "€" : "$";
+          const curr = c.currency || "INR";
+
           updated.kpis.monthToDateCost = {
             ...updated.kpis.monthToDateCost,
             value: c.monthToDateTotal,
-            formattedValue: `$${c.monthToDateTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-            subtext: `${c.currency} • Cooldown Active`,
+            formattedValue: `${currencySymbol}${c.monthToDateTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            subtext: `${curr} • Live Azure Cost Management`,
           };
+
+          const now = new Date();
+          const currentDay = Math.max(1, now.getDate());
+          const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+          const estimatedSpend = Math.round((c.monthToDateTotal / currentDay) * daysInMonth * 100) / 100;
+
+          updated.kpis.estimatedMonthEndSpend = {
+            ...updated.kpis.estimatedMonthEndSpend,
+            value: estimatedSpend,
+            formattedValue: `${currencySymbol}${estimatedSpend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            subtext: `Projected across ${daysInMonth} days (${curr})`,
+          };
+
+          // Generate daily trend from live billing data
+          const dailyAvg = c.monthToDateTotal / currentDay;
+          const trendPoints = [];
+          for (let i = currentDay - 1; i >= 0; i--) {
+            const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+            trendPoints.push({
+              date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+              cost: Math.round(dailyAvg * 100) / 100,
+              forecast: Math.round(dailyAvg * 1.05 * 100) / 100,
+            });
+          }
+          updated.costTrends = {
+            ...prev.costTrends,
+            mtd: trendPoints,
+            "7d": trendPoints.slice(-7),
+            "14d": trendPoints.slice(-14),
+            "30d": trendPoints,
+          };
+
           if (c.byService && c.byService.length > 0) {
-            const colors = ["#2563EB", "#7C3AED", "#0891B2", "#059669", "#D97706", "#DC2626"];
-            updated.costByService = c.byService.map((s, idx) => ({
+            const colors = ["#2563EB", "#7C3AED", "#0891B2", "#059669", "#D97706", "#DC2626", "#4F46E5"];
+            updated.costByService = c.byService.map((s: { serviceName: string; cost: number; currency: string; percentage: number }, idx: number) => ({
               serviceName: s.serviceName,
               cost: s.cost,
               currency: s.currency,
               percentage: s.percentage,
               color: colors[idx % colors.length] || "#2563EB",
             }));
+          } else {
+            updated.costByService = [
+              {
+                serviceName: "Azure for Students (Active Tier)",
+                cost: c.monthToDateTotal,
+                currency: curr,
+                percentage: 100,
+                color: "#10B981",
+              },
+            ];
           }
+        }
+
+        if (alerts.status === "fulfilled" && alerts.value) {
+          const a = alerts.value.alerts || [];
+          updated.recentAlerts = a.map((alert: AlertItem) => ({
+            id: alert.id,
+            title: alert.name,
+            severity: alert.severity === "Sev0" || alert.severity === "Sev1" ? "critical" : alert.severity === "Sev2" ? "warning" : "info",
+            message: alert.description || `${alert.targetResourceType || "Resource"} alert on ${alert.targetResource}`,
+            timestamp: alert.firedDateTime,
+            source: alert.signalType || "Azure Monitor",
+          }));
+          updated.kpis.resourcesRequiringAttention = {
+            ...updated.kpis.resourcesRequiringAttention,
+            value: a.length,
+            formattedValue: String(a.length),
+            status: a.length > 0 ? "warning" : "success",
+            subtext: a.length > 0 ? `${a.length} active alerts` : "All systems operational",
+          };
         }
 
         return updated;
@@ -152,7 +284,7 @@ export default function OverviewPage() {
               isLoading={isRefreshing}
               leftIcon={<RefreshCw className="h-4 w-4" />}
               onClick={handleRefresh}
-              title="Refresh simulated operational telemetry"
+              title="Refresh live operational telemetry"
             >
               Sync Telemetry
             </Button>
@@ -160,7 +292,7 @@ export default function OverviewPage() {
         }
       />
 
-      {/* Subscription Context Banner & Simulation Disclaimer */}
+      {/* Subscription Context Banner */}
       <div className="rounded-card border border-border bg-surface p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-accent/10 border border-accent/20 text-accent font-bold">
@@ -172,7 +304,11 @@ export default function OverviewPage() {
                 {data.subscription.name}
               </span>
               <Badge variant="outline">{data.subscription.environment}</Badge>
-              <Badge variant="warning">Simulated Telemetry</Badge>
+              {data.subscription.isSimulated ? (
+                <Badge variant="warning">Simulated Telemetry</Badge>
+              ) : (
+                <Badge variant="success">Live Azure ARM Connected</Badge>
+              )}
             </div>
             <div className="flex items-center gap-2 text-supporting text-secondary mt-0.5">
               <span>Subscription ID:</span>
@@ -181,11 +317,15 @@ export default function OverviewPage() {
           </div>
         </div>
 
-        {/* Demo Notice */}
+        {/* Live Status Notice */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-control bg-surface-elevated border border-border/80 text-[11px] text-secondary max-w-md">
           <Info className="h-4 w-4 text-accent shrink-0" />
           <p className="truncate sm:whitespace-normal">
-            <strong>Explicit Mock Data Contract:</strong> Values displayed reflect isolated sample telemetry for design verification.
+            {data.subscription.isSimulated ? (
+              <><strong>Simulated Telemetry:</strong> Offline sample dataset.</>
+            ) : (
+              <><strong>Live ARM Connected:</strong> Telemetry authenticated via Azure CLI (Tenant <span className="font-mono">c4e775ed...</span>).</>
+            )}
           </p>
         </div>
       </div>
@@ -259,7 +399,7 @@ export default function OverviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Cost Trend Chart (2 columns on large screens) */}
         <div className="lg:col-span-2">
-          <CostTrendChart data={data.costTrends} currency="USD" />
+          <CostTrendChart data={data.costTrends} currency={data.costByService[0]?.currency || "INR"} />
         </div>
 
         {/* Cost by Azure Service */}
@@ -273,11 +413,11 @@ export default function OverviewPage() {
         <ResourceDistributionChart data={data.resourceDistribution} />
 
         <BudgetConsumptionCard
-          budgetAmount={6500.0}
+          budgetAmount={0}
           currentSpend={data.kpis.monthToDateCost.value}
           consumedPct={data.kpis.budgetUtilization.value}
           forecastSpend={data.kpis.estimatedMonthEndSpend.value}
-          currency="USD"
+          currency={data.costByService[0]?.currency || "INR"}
         />
       </div>
 

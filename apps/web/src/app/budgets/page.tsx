@@ -12,7 +12,6 @@ import {
   Clock,
   Mail,
   ExternalLink,
-  Sliders,
   DollarSign,
   TrendingUp,
 } from "lucide-react";
@@ -26,7 +25,6 @@ import { budgetService } from "../../lib/services/budget-service";
 import { AzureBudgetItem, BudgetAlertEvent, BudgetThresholdItem } from "../../lib/mock-data/costs";
 
 export default function BudgetsPage() {
-  const [hasBudgetConfigured, setHasBudgetConfigured] = useState<boolean>(true);
   const [budget, setBudget] = useState<AzureBudgetItem | null>(null);
   const [alertHistory, setAlertHistory] = useState<BudgetAlertEvent[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -38,12 +36,12 @@ export default function BudgetsPage() {
 
     try {
       const [fetchedBudget, fetchedHistory] = await Promise.all([
-        budgetService.getPrimaryBudget(hasBudgetConfigured, controller.signal),
+        budgetService.getPrimaryBudget(true, controller.signal),
         budgetService.getAlertHistory(controller.signal),
       ]);
 
       setBudget(fetchedBudget);
-      setAlertHistory(hasBudgetConfigured ? fetchedHistory : []);
+      setAlertHistory(fetchedBudget ? fetchedHistory : []);
       setLastEvaluated(new Date().toISOString());
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") return;
@@ -53,7 +51,7 @@ export default function BudgetsPage() {
     }
 
     return () => controller.abort();
-  }, [hasBudgetConfigured]);
+  }, []);
 
   useEffect(() => {
     loadBudgetData();
@@ -68,16 +66,6 @@ export default function BudgetsPage() {
         breadcrumbs={[{ label: "Operations", href: "/" }, { label: "Cost Management", href: "/costs" }, { label: "Budgets" }]}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            {/* Quick simulation mode toggle */}
-            <Button
-              variant="outline"
-              size="sm"
-              leftIcon={<Sliders className="h-4 w-4" />}
-              onClick={() => setHasBudgetConfigured(!hasBudgetConfigured)}
-              aria-label="Toggle budget state simulation"
-            >
-              {hasBudgetConfigured ? "Simulate Unconfigured Budget" : "Restore Sample Budget"}
-            </Button>
             <Button
               variant="secondary"
               size="sm"
@@ -106,19 +94,19 @@ export default function BudgetsPage() {
         }
       />
 
-      {/* Mock Data Notice Banner */}
-      <div className="rounded-card border border-accent/30 bg-accent/5 p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-body">
+      {/* Live Azure Connection Banner */}
+      <div className="rounded-card border border-border bg-surface p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-body">
         <div className="flex items-start gap-3">
           <div className="rounded-full bg-accent/20 p-2 text-accent shrink-0 mt-0.5">
             <Shield className="h-4 w-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-primary">Simulated Enterprise Budget Data</span>
-              <Badge variant="info">Phase 5 Mock Provider</Badge>
+              <span className="font-semibold text-primary">Azure Consumption & Budgets</span>
+              <Badge variant="success">Live ARM Connected</Badge>
             </div>
             <p className="text-supporting text-secondary mt-0.5">
-              Live Azure Cost Management and Consumption APIs are not yet connected. All spending limits, threshold rules, and alerts represent high-fidelity mock contracts.
+              Connected to subscription <span className="font-mono">f3834a10-6431-4a62-8a1b-738cb5629169</span> (Azure for Students). Monitored spending limits and alerts.
             </p>
           </div>
         </div>
@@ -154,15 +142,15 @@ export default function BudgetsPage() {
       </div>
 
       {/* Truthful Empty State when Subscription Has No Configured Budget */}
-      {!hasBudgetConfigured || !budget ? (
+      {!budget ? (
         <Card>
           <CardContent className="py-12">
             <EmptyState
               icon={<DollarSign className="h-10 w-10 text-secondary/60" />}
               title="No Configured Azure Budget Detected"
-              description="Subscription 'sub-adt-ai-foundation-prod-01' has no active budget configured in Azure Cost Management. Azure does not generate default budgets automatically. Without a configured budget, no threshold alerts or forecast warnings can be triggered."
-              actionLabel="Restore Sample Budget Data"
-              onAction={() => setHasBudgetConfigured(true)}
+              description="Subscription 'Azure for Students' (f3834a10-6431-4a62-8a1b-738cb5629169) has no active budget configured in Azure Cost Management. You can create a budget to establish spending thresholds and notifications."
+              actionLabel="Configure in Azure Portal"
+              onAction={() => window.open("https://portal.azure.com/#view/Microsoft_Azure_CostManagement/Menu/~/budgets", "_blank")}
             />
             <div className="mt-8 max-w-xl mx-auto rounded-control bg-surface-elevated p-4 border border-border text-supporting text-secondary space-y-2">
               <div className="flex items-center gap-2 text-primary font-semibold">
@@ -171,7 +159,7 @@ export default function BudgetsPage() {
               </div>
               <ol className="list-decimal list-inside space-y-1 pl-1">
                 <li>Navigate to Cost Management + Billing in Azure Portal.</li>
-                <li>Select your subscription scope (<code>sub-adt-ai-foundation-prod-01</code>).</li>
+                <li>Select your subscription scope (<code>f3834a10-6431-4a62-8a1b-738cb5629169</code>).</li>
                 <li>Under <strong>Cost Management</strong>, choose <strong>Budgets</strong> &gt; <strong>+ Add</strong>.</li>
                 <li>Set reset period (Monthly), budget limit, and alert email recipients.</li>
               </ol>

@@ -167,19 +167,42 @@ export class AzureInventoryService implements IInventoryService {
         { signal }
       );
 
-      const mapped: AzureResourceItem[] = res.resources.map((r) => ({
-        id: r.id,
-        name: r.name,
-        type: r.type,
-        resourceGroup: r.resourceGroup,
-        location: r.location,
-        locationDisplay: r.location,
-        provisioningState: (r.provisioningState as ProvisioningState) || "Succeeded",
-        tags: r.tags || {},
-        lastObserved: res.lastUpdated,
-        sku: r.sku,
-        powerState: r.type.toLowerCase().includes("virtualmachines") ? ("running" as VmPowerState) : undefined,
-      }));
+      // Fetch VM states in parallel for accurate VM status badges
+      let vmStatesMap = new Map<string, VmPowerState>();
+      try {
+        const vmsRes = await fetchFromApi<{ vms: Array<{ id: string; powerState: VmPowerState }> }>(
+          "/api/resources/vms",
+          { signal }
+        );
+        if (vmsRes && vmsRes.vms) {
+          for (const v of vmsRes.vms) {
+            vmStatesMap.set(v.id.toLowerCase(), v.powerState);
+          }
+        }
+      } catch {
+        // Continue if VM instanceView query takes extra time
+      }
+
+      const mapped: AzureResourceItem[] = res.resources.map((r) => {
+        const isVm = r.type.toLowerCase().includes("virtualmachines");
+        const powerState = isVm
+          ? vmStatesMap.get(r.id.toLowerCase()) || "deallocated"
+          : undefined;
+
+        return {
+          id: r.id,
+          name: r.name,
+          type: r.type,
+          resourceGroup: r.resourceGroup,
+          location: r.location,
+          locationDisplay: r.location,
+          provisioningState: (r.provisioningState as ProvisioningState) || "Succeeded",
+          tags: r.tags || {},
+          lastObserved: res.lastUpdated,
+          sku: r.sku,
+          powerState,
+        };
+      });
 
       const pageSize = params.pageSize || 10;
       const totalPages = Math.max(1, Math.ceil(res.totalCount / pageSize));
@@ -215,6 +238,18 @@ export class AzureInventoryService implements IInventoryService {
   }
 
   public async getFilterOptions() {
+    try {
+      const res = await fetchFromApi<ResourceInventoryResponse>("/api/resources?pageSize=100");
+      if (res && res.resources && res.resources.length > 0) {
+        const types = Array.from(new Set(res.resources.map((r) => r.type))).sort();
+        const regions = Array.from(new Set(res.resources.map((r) => r.location))).sort();
+        const resourceGroups = Array.from(new Set(res.resources.map((r) => r.resourceGroup))).sort();
+        const statuses = ["Succeeded", "Running (VM)", "Deallocated (VM)", "Stopped (VM)", "Failed"];
+        return { types, regions, resourceGroups, statuses };
+      }
+    } catch (e) {
+      console.warn("[InventoryService] Live filter options fetch failed, using fallback:", e);
+    }
     return this.fallbackService.getFilterOptions();
   }
 }
